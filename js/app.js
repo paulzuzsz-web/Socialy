@@ -4,6 +4,7 @@
   const { t, tp, applyI18n, getLanguage, setLanguage, LANGUAGES } = window.SocialyI18n;
   const { THEMES, getTheme, setTheme, applyTheme } = window.SocialyThemes;
   const Auth = window.SocialyAuth;
+  const Offline = window.SocialyOffline;
 
   const API = {
     videos: "/api/videos",
@@ -21,6 +22,11 @@
   const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB pro Chunk (Rohdaten)
   const CHUNK_CONCURRENCY = 3;
   const NEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // "Neu"-Filter: letzte 7 Tage
+
+  // Muss mit netlify/functions/auth-utils.js übereinstimmen.
+  const DAILY_CLAIM_COINS = 50;
+  const DAILY_CLAIM_COOLDOWN_MS = 20 * 60 * 60 * 1000;
+  const PREMIUM_COST_COINS = 1000;
 
   const els = {
     authGate: document.getElementById("authGate"),
@@ -41,14 +47,20 @@
 
     videoGrid: document.getElementById("videoGrid"),
     emptyState: document.getElementById("emptyState"),
+    emptyStateTitle: document.getElementById("emptyStateTitle"),
+    emptyStateDesc: document.getElementById("emptyStateDesc"),
     videoCountLabel: document.getElementById("videoCountLabel"),
     searchInput: document.getElementById("searchInput"),
     searchBtn: document.getElementById("searchBtn"),
     filterRow: document.getElementById("filterRow"),
 
+    coinChipBtn: document.getElementById("coinChipBtn"),
+    coinBalanceLabel: document.getElementById("coinBalanceLabel"),
+
     userChipBtn: document.getElementById("userChipBtn"),
     userAvatar: document.getElementById("userAvatar"),
     userNameLabel: document.getElementById("userNameLabel"),
+    userChipPremiumBadge: document.getElementById("userChipPremiumBadge"),
     settingsBtn: document.getElementById("settingsBtn"),
 
     settingsModalOverlay: document.getElementById("settingsModalOverlay"),
@@ -60,6 +72,26 @@
     settingsLogoutBtn: document.getElementById("settingsLogoutBtn"),
     settingsDesignPanel: document.getElementById("settingsDesignPanel"),
     settingsLanguagePanel: document.getElementById("settingsLanguagePanel"),
+    openStudioBtn: document.getElementById("openStudioBtn"),
+
+    coinsBalanceNumber: document.getElementById("coinsBalanceNumber"),
+    coinsDailyDesc: document.getElementById("coinsDailyDesc"),
+    claimCoinsBtn: document.getElementById("claimCoinsBtn"),
+    premiumCard: document.getElementById("premiumCard"),
+    unlockPremiumBtn: document.getElementById("unlockPremiumBtn"),
+
+    studioOverlay: document.getElementById("studioOverlay"),
+    closeStudioBtn: document.getElementById("closeStudioBtn"),
+    studioStatsGrid: document.getElementById("studioStatsGrid"),
+    studioEmpty: document.getElementById("studioEmpty"),
+    studioVideoListWrap: document.getElementById("studioVideoListWrap"),
+    studioVideoList: document.getElementById("studioVideoList"),
+
+    legalModalOverlay: document.getElementById("legalModalOverlay"),
+    legalModalTitle: document.getElementById("legalModalTitle"),
+    legalModalBody: document.getElementById("legalModalBody"),
+    closeLegalBtn: document.getElementById("closeLegalBtn"),
+    footerCopyright: document.getElementById("footerCopyright"),
 
     openUploadBtn: document.getElementById("openUploadBtn"),
     uploadModalOverlay: document.getElementById("uploadModalOverlay"),
@@ -73,6 +105,11 @@
     videoPreviewWrap: document.getElementById("videoPreviewWrap"),
     videoPreview: document.getElementById("videoPreview"),
     thumbCanvas: document.getElementById("thumbCanvas"),
+    thumbnailPicker: document.getElementById("thumbnailPicker"),
+    thumbnailPreviewImg: document.getElementById("thumbnailPreviewImg"),
+    thumbScrubRange: document.getElementById("thumbScrubRange"),
+    thumbnailUploadBtn: document.getElementById("thumbnailUploadBtn"),
+    thumbnailFileInput: document.getElementById("thumbnailFileInput"),
     titleInput: document.getElementById("titleInput"),
     descriptionInput: document.getElementById("descriptionInput"),
     uploadError: document.getElementById("uploadError"),
@@ -92,6 +129,8 @@
     likeBtn: document.getElementById("likeBtn"),
     likeCount: document.getElementById("likeCount"),
     viewCount: document.getElementById("viewCount"),
+    offlineSaveBtn: document.getElementById("offlineSaveBtn"),
+    offlineSaveLabel: document.getElementById("offlineSaveLabel"),
     commentForm: document.getElementById("commentForm"),
     commentInput: document.getElementById("commentInput"),
     commentList: document.getElementById("commentList"),
@@ -141,6 +180,14 @@
     return String(n);
   }
 
+  function formatCountdown(ms) {
+    if (ms <= 0) return "";
+    const totalMin = Math.ceil(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return h > 0 ? `${h}h ${m}min` : `${m}min`;
+  }
+
   function timeAgo(iso) {
     const diffMs = Date.now() - new Date(iso).getTime();
     const min = Math.floor(diffMs / 60000);
@@ -161,14 +208,81 @@
     return user ? user.username : "";
   }
 
+  function getMyVideos() {
+    const me = getUsername().toLowerCase();
+    return allVideos.filter((v) => v.username.toLowerCase() === me);
+  }
+
   function refreshUserChip() {
-    const name = getUsername();
+    const user = Auth.getUser();
+    const name = user ? user.username : "";
     els.userAvatar.textContent = initials(name || t("nav.guest"));
     els.userNameLabel.textContent = name || t("nav.guest");
+    els.userChipPremiumBadge.classList.toggle("hidden", !(user && user.isPremium));
   }
 
   function checkIcon() {
     return `<span class="check"><svg class="ico"><use href="#ic-check"></use></svg></span>`;
+  }
+
+  // ---------- Coins & Premium ----------
+
+  function getNextClaimMs(user) {
+    if (!user.lastDailyClaim) return 0;
+    return new Date(user.lastDailyClaim).getTime() + DAILY_CLAIM_COOLDOWN_MS - Date.now();
+  }
+
+  function refreshCoinsUI() {
+    const user = Auth.getUser();
+    if (!user) return;
+
+    els.coinBalanceLabel.textContent = formatCount(user.coins);
+    els.coinsBalanceNumber.textContent = formatCount(user.coins);
+    els.coinsDailyDesc.textContent = t("coins.dailyDesc", { amount: DAILY_CLAIM_COINS });
+
+    const remaining = getNextClaimMs(user);
+    if (remaining > 0) {
+      els.claimCoinsBtn.disabled = true;
+      els.claimCoinsBtn.textContent = t("coins.nextClaim", { time: formatCountdown(remaining) });
+    } else {
+      els.claimCoinsBtn.disabled = false;
+      els.claimCoinsBtn.textContent = t("coins.claimButton", { amount: DAILY_CLAIM_COINS });
+    }
+
+    if (user.isPremium) {
+      els.premiumCard.classList.add("is-premium");
+      els.unlockPremiumBtn.textContent = t("premium.active");
+      els.unlockPremiumBtn.disabled = true;
+    } else {
+      els.premiumCard.classList.remove("is-premium");
+      const missing = Math.max(0, PREMIUM_COST_COINS - user.coins);
+      els.unlockPremiumBtn.disabled = missing > 0;
+      els.unlockPremiumBtn.textContent =
+        missing > 0 ? t("premium.notEnough", { missing }) : t("premium.unlockButton", { cost: PREMIUM_COST_COINS });
+    }
+  }
+
+  async function handleClaimCoins() {
+    els.claimCoinsBtn.disabled = true;
+    try {
+      const data = await Auth.claimDailyCoins();
+      toast(t("coins.claimSuccess", { amount: data.claimed }));
+    } catch (err) {
+      toast(err.message || t("coins.claimError"), "error");
+    } finally {
+      refreshCoinsUI();
+    }
+  }
+
+  async function handleUnlockPremium() {
+    try {
+      await Auth.unlockPremium();
+      toast(t("premium.unlockSuccess"));
+      refreshCoinsUI();
+      refreshUserChip();
+    } catch (err) {
+      toast(err.message || t("premium.unlockError"), "error");
+    }
   }
 
   // ---------- Settings modal ----------
@@ -239,6 +353,7 @@
 
   function openSettingsModal(tabName = "account") {
     renderSettingsAccount();
+    refreshCoinsUI();
     switchSettingsTab(tabName);
     els.settingsModalOverlay.classList.remove("hidden");
   }
@@ -250,6 +365,7 @@
   function refreshAllText() {
     applyI18n();
     refreshUserChip();
+    refreshCoinsUI();
     renderSettingsAccount();
     renderSettingsDesignPanel();
     renderSettingsLanguagePanel();
@@ -259,6 +375,110 @@
       const video = allVideos.find((v) => v.id === currentVideoId);
       if (video) renderComments(video.comments || []);
     }
+  }
+
+  // ---------- Studio ----------
+
+  function studioTile(number, label) {
+    return `<div class="studio-stat-tile"><div class="studio-stat-number">${number}</div><div class="studio-stat-label">${escapeHtml(label)}</div></div>`;
+  }
+
+  function renderStudio() {
+    const myVideos = getMyVideos();
+
+    if (!myVideos.length) {
+      els.studioStatsGrid.innerHTML = "";
+      els.studioEmpty.classList.remove("hidden");
+      els.studioVideoListWrap.classList.add("hidden");
+      return;
+    }
+    els.studioEmpty.classList.add("hidden");
+    els.studioVideoListWrap.classList.remove("hidden");
+
+    const totalViews = myVideos.reduce((sum, v) => sum + (v.views || 0), 0);
+    const totalLikes = myVideos.reduce((sum, v) => sum + (v.likes || 0), 0);
+    const totalComments = myVideos.reduce((sum, v) => sum + (v.comments ? v.comments.length : 0), 0);
+
+    els.studioStatsGrid.innerHTML = [
+      studioTile(formatCount(myVideos.length), t("studio.totalVideos")),
+      studioTile(formatCount(totalViews), t("studio.totalViews")),
+      studioTile(formatCount(totalLikes), t("studio.totalLikes")),
+      studioTile(formatCount(totalComments), t("studio.totalComments")),
+    ].join("");
+
+    const sorted = [...myVideos].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const maxViews = Math.max(1, ...sorted.map((v) => v.views || 0));
+
+    els.studioVideoList.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    sorted.forEach((video) => {
+      const row = document.createElement("div");
+      row.className = "studio-video-row";
+      row.style.cursor = "pointer";
+      const thumbHtml = video.hasThumbnail
+        ? `<img class="studio-video-thumb" src="${API.thumbnail(video.id)}" alt="" />`
+        : `<div class="studio-video-thumb thumb-fallback"><svg class="ico"><use href="#ic-video"></use></svg></div>`;
+      const pct = Math.round(((video.views || 0) / maxViews) * 100);
+      row.innerHTML = `
+        ${thumbHtml}
+        <div class="studio-video-info">
+          <p class="studio-video-title">${escapeHtml(video.title)}</p>
+          <span class="studio-video-date">${timeAgo(video.createdAt)}</span>
+          <div class="studio-video-bar-track"><div class="studio-video-bar-fill" style="width:${pct}%"></div></div>
+        </div>
+        <div class="studio-video-metrics">
+          <div class="studio-video-metric">
+            <div class="studio-video-metric-number">${formatCount(video.views)}</div>
+            <div class="studio-video-metric-label">${escapeHtml(t("studio.totalViews"))}</div>
+          </div>
+          <div class="studio-video-metric">
+            <div class="studio-video-metric-number">${formatCount(video.likes)}</div>
+            <div class="studio-video-metric-label">${escapeHtml(t("studio.totalLikes"))}</div>
+          </div>
+          <div class="studio-video-metric">
+            <div class="studio-video-metric-number">${formatCount(video.comments ? video.comments.length : 0)}</div>
+            <div class="studio-video-metric-label">${escapeHtml(t("studio.totalComments"))}</div>
+          </div>
+        </div>
+      `;
+      row.addEventListener("click", () => {
+        closeStudio();
+        openWatch(video.id);
+      });
+      frag.appendChild(row);
+    });
+    els.studioVideoList.appendChild(frag);
+  }
+
+  function openStudio() {
+    closeSettingsModal();
+    renderStudio();
+    els.studioOverlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeStudio() {
+    els.studioOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
+  }
+
+  // ---------- Legal modal ----------
+
+  function openLegalModal(type) {
+    els.legalModalTitle.textContent = t(`legal.${type}Title`);
+    els.legalModalBody.innerHTML = "";
+    t(`legal.${type}Body`)
+      .split("\n\n")
+      .forEach((para) => {
+        const p = document.createElement("p");
+        p.textContent = para;
+        els.legalModalBody.appendChild(p);
+      });
+    els.legalModalOverlay.classList.remove("hidden");
+  }
+
+  function closeLegalModal() {
+    els.legalModalOverlay.classList.add("hidden");
   }
 
   // ---------- Filters ----------
@@ -284,8 +504,7 @@
     } else if (currentFilter === "mostViewed") {
       list = [...list].sort((a, b) => (b.views || 0) - (a.views || 0));
     } else if (currentFilter === "mine") {
-      const me = getUsername().toLowerCase();
-      list = list.filter((v) => v.username.toLowerCase() === me);
+      list = getMyVideos();
     }
     return list;
   }
@@ -328,7 +547,15 @@
     }
   }
 
-  function renderGrid() {
+  async function renderGrid() {
+    if (currentFilter === "offline") {
+      await renderOfflineGrid();
+      return;
+    }
+
+    els.emptyStateTitle.textContent = t("empty.title");
+    els.emptyStateDesc.textContent = t("empty.desc");
+
     const query = els.searchInput.value.trim().toLowerCase();
     let filtered = getFilteredVideos();
     if (query) {
@@ -388,6 +615,159 @@
     return card;
   }
 
+  // ---------- Offline library ----------
+
+  async function renderOfflineGrid() {
+    const query = els.searchInput.value.trim().toLowerCase();
+    let list = await Offline.listVideos();
+    list.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+    if (query) {
+      list = list.filter(
+        (v) => (v.title || "").toLowerCase().includes(query) || (v.username || "").toLowerCase().includes(query)
+      );
+    }
+
+    els.videoCountLabel.textContent = "";
+    els.videoGrid.innerHTML = "";
+
+    if (!list.length) {
+      els.emptyStateTitle.textContent = t("offline.emptyTitle");
+      els.emptyStateDesc.textContent = t("offline.emptyDesc");
+      els.emptyState.classList.remove("hidden");
+      return;
+    }
+    els.emptyState.classList.add("hidden");
+
+    const frag = document.createDocumentFragment();
+    list.forEach((video, i) => frag.appendChild(buildOfflineCard(video, i)));
+    els.videoGrid.appendChild(frag);
+  }
+
+  function buildOfflineCard(video, index = 0) {
+    const card = document.createElement("div");
+    card.className = "video-card";
+    card.dataset.id = video.id;
+    card.style.animationDelay = `${Math.min(index, 14) * 35}ms`;
+    card.tabIndex = 0;
+
+    const thumbHtml = video.thumbnailBlob
+      ? `<img class="thumb" src="${URL.createObjectURL(video.thumbnailBlob)}" alt="${escapeHtml(video.title)}" />`
+      : `<div class="thumb-fallback"><svg class="ico"><use href="#ic-video"></use></svg></div>`;
+
+    card.innerHTML = `
+      <div class="thumb-wrap">
+        ${thumbHtml}
+        <div class="play-hint"><svg class="ico ico--filled"><use href="#ic-logo"></use></svg></div>
+      </div>
+      <div class="card-meta">
+        <span class="avatar">${initials(video.username)}</span>
+        <div class="card-meta-text">
+          <p class="card-title">${escapeHtml(video.title)}</p>
+          <p class="card-sub">${escapeHtml(video.username)}</p>
+          <p class="card-sub">${escapeHtml(t("offline.saved"))}</p>
+        </div>
+      </div>
+    `;
+
+    card.addEventListener("click", () => openOfflineWatch(video.id));
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openOfflineWatch(video.id);
+      }
+    });
+    return card;
+  }
+
+  async function refreshOfflineButton(id) {
+    const saved = await Offline.isSaved(id);
+    els.offlineSaveBtn.classList.toggle("liked", saved);
+    els.offlineSaveLabel.textContent = saved ? t("offline.saved") : t("offline.save");
+    els.offlineSaveBtn.dataset.saved = saved ? "1" : "0";
+  }
+
+  async function handleOfflineSave() {
+    if (!currentVideoId) return;
+    const user = Auth.getUser();
+    if (!user || !user.isPremium) {
+      toast(t("offline.premiumOnly"));
+      closeWatch();
+      openSettingsModal("coins");
+      return;
+    }
+
+    const id = currentVideoId;
+    const alreadySaved = els.offlineSaveBtn.dataset.saved === "1";
+
+    if (alreadySaved) {
+      await Offline.removeVideo(id);
+      toast(t("offline.removeSuccess"));
+      await refreshOfflineButton(id);
+      if (currentFilter === "offline") renderGrid();
+      return;
+    }
+
+    const video = allVideos.find((v) => v.id === id);
+    els.offlineSaveBtn.disabled = true;
+    try {
+      const videoRes = await fetch(API.video(id));
+      if (!videoRes.ok) throw new Error();
+      const blob = await videoRes.blob();
+
+      let thumbnailBlob = null;
+      if (video && video.hasThumbnail) {
+        try {
+          const thumbRes = await fetch(API.thumbnail(id));
+          if (thumbRes.ok) thumbnailBlob = await thumbRes.blob();
+        } catch {
+          thumbnailBlob = null;
+        }
+      }
+
+      await Offline.saveVideo(
+        {
+          id,
+          title: video ? video.title : els.watchTitle.textContent,
+          username: video ? video.username : els.watchUsername.textContent,
+          description: video ? video.description : "",
+          createdAt: video ? video.createdAt : new Date().toISOString(),
+          thumbnailBlob,
+        },
+        blob
+      );
+
+      toast(t("offline.saveSuccess"));
+      await refreshOfflineButton(id);
+      if (currentFilter === "offline") renderGrid();
+    } catch (err) {
+      console.error(err);
+      toast(t("offline.saveError"), "error");
+    } finally {
+      els.offlineSaveBtn.disabled = false;
+    }
+  }
+
+  async function openOfflineWatch(id) {
+    const video = await Offline.getVideo(id);
+    if (!video) return;
+
+    currentVideoId = id;
+    els.watchVideo.src = URL.createObjectURL(video.blob);
+    els.watchTitle.textContent = video.title;
+    els.watchAvatar.textContent = initials(video.username);
+    els.watchUsername.textContent = video.username;
+    els.watchMeta.textContent = t("offline.saved");
+    els.watchDescription.textContent = video.description || "";
+    els.likeCount.textContent = "–";
+    els.viewCount.textContent = "–";
+    els.likeBtn.classList.remove("liked");
+    renderComments([]);
+    await refreshOfflineButton(id);
+
+    els.watchOverlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  }
+
   // ---------- Watch view ----------
 
   async function openWatch(id) {
@@ -409,6 +789,7 @@
     els.likeBtn.classList.toggle("liked", liked);
 
     renderComments(video.comments || []);
+    await refreshOfflineButton(id);
 
     els.watchOverlay.classList.remove("hidden");
     document.body.style.overflow = "hidden";
@@ -428,6 +809,7 @@
   function closeWatch() {
     els.watchOverlay.classList.add("hidden");
     els.watchVideo.pause();
+    if (els.watchVideo.src.startsWith("blob:")) URL.revokeObjectURL(els.watchVideo.src);
     els.watchVideo.removeAttribute("src");
     els.watchVideo.load();
     document.body.style.overflow = "";
@@ -528,6 +910,8 @@
     selectedThumbnailDataUrl = null;
     els.videoPreviewWrap.classList.add("hidden");
     els.videoPreview.removeAttribute("src");
+    els.thumbnailPicker.classList.add("hidden");
+    els.thumbnailPreviewImg.removeAttribute("src");
     els.dropzoneLabel.textContent = t("upload.dropzoneLabel");
     els.uploadError.classList.remove("show");
     els.uploadError.textContent = "";
@@ -556,6 +940,28 @@
     els.uploadProgressLabel.textContent = clamped + "%";
     els.submitUploadBtn.textContent =
       clamped >= 100 ? t("upload.finalizing") : t("upload.uploading", { percent: clamped });
+  }
+
+  function captureThumbnailFrame() {
+    try {
+      const canvas = els.thumbCanvas;
+      const ratio = els.videoPreview.videoWidth / els.videoPreview.videoHeight;
+      let w = canvas.width;
+      let h = canvas.height;
+      if (ratio > w / h) {
+        h = Math.round(w / ratio);
+      } else {
+        w = Math.round(h * ratio);
+      }
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(els.videoPreview, 0, 0, w, h);
+      selectedThumbnailDataUrl = canvas.toDataURL("image/jpeg", 0.75);
+      els.thumbnailPreviewImg.src = selectedThumbnailDataUrl;
+    } catch (err) {
+      console.warn("Thumbnail-Erstellung fehlgeschlagen", err);
+    }
   }
 
   function handleFileSelected(file) {
@@ -587,7 +993,11 @@
       "loadedmetadata",
       () => {
         try {
-          els.videoPreview.currentTime = Math.min(0.5, (els.videoPreview.duration || 1) / 4);
+          const duration = els.videoPreview.duration || 1;
+          els.thumbScrubRange.max = String(Math.max(1, Math.floor(duration * 10)));
+          els.thumbScrubRange.value = "0";
+          els.videoPreview.currentTime = Math.min(0.5, duration / 4);
+          els.thumbnailPicker.classList.remove("hidden");
         } catch {
           /* ignore */
         }
@@ -595,30 +1005,7 @@
       { once: true }
     );
 
-    els.videoPreview.addEventListener(
-      "seeked",
-      () => {
-        try {
-          const canvas = els.thumbCanvas;
-          const ratio = els.videoPreview.videoWidth / els.videoPreview.videoHeight;
-          let w = canvas.width;
-          let h = canvas.height;
-          if (ratio > w / h) {
-            h = Math.round(w / ratio);
-          } else {
-            w = Math.round(h * ratio);
-          }
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(els.videoPreview, 0, 0, w, h);
-          selectedThumbnailDataUrl = canvas.toDataURL("image/jpeg", 0.75);
-        } catch (err) {
-          console.warn("Thumbnail-Erstellung fehlgeschlagen", err);
-        }
-      },
-      { once: true }
-    );
+    els.videoPreview.addEventListener("seeked", captureThumbnailFrame);
   }
 
   function blobToBase64(blob) {
@@ -744,7 +1131,14 @@
     els.appRoot.classList.remove("hidden");
     applyTheme(getTheme());
     refreshUserChip();
-    await loadVideos();
+    refreshCoinsUI();
+
+    if (Auth.isOfflineSession()) {
+      toast(t("offline.sessionRestored"));
+      setFilter("offline");
+    } else {
+      await loadVideos();
+    }
   }
 
   function showAuthGate() {
@@ -871,30 +1265,71 @@
     if (file) handleFileSelected(file);
   });
 
+  els.thumbScrubRange.addEventListener("input", () => {
+    try {
+      els.videoPreview.currentTime = Number(els.thumbScrubRange.value) / 10;
+    } catch {
+      /* ignore */
+    }
+  });
+  els.thumbnailUploadBtn.addEventListener("click", () => els.thumbnailFileInput.click());
+  els.thumbnailFileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      selectedThumbnailDataUrl = String(reader.result);
+      els.thumbnailPreviewImg.src = selectedThumbnailDataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+
   els.closeWatchBtn.addEventListener("click", closeWatch);
   els.watchOverlay.addEventListener("click", (e) => {
     if (e.target === els.watchOverlay) closeWatch();
   });
   els.likeBtn.addEventListener("click", handleLike);
+  els.offlineSaveBtn.addEventListener("click", handleOfflineSave);
   els.commentForm.addEventListener("submit", handleCommentSubmit);
 
   els.userChipBtn.addEventListener("click", () => openSettingsModal("account"));
   els.settingsBtn.addEventListener("click", () => openSettingsModal("account"));
+  els.coinChipBtn.addEventListener("click", () => openSettingsModal("coins"));
   els.closeSettingsBtn.addEventListener("click", closeSettingsModal);
   els.settingsModalOverlay.addEventListener("click", (e) => {
     if (e.target === els.settingsModalOverlay) closeSettingsModal();
   });
   els.settingsTabs.addEventListener("click", (e) => {
     const btn = e.target.closest(".settings-tab");
-    if (btn) switchSettingsTab(btn.dataset.settingstab);
+    if (btn) {
+      switchSettingsTab(btn.dataset.settingstab);
+      refreshCoinsUI();
+    }
   });
   els.settingsLogoutBtn.addEventListener("click", handleLogout);
+  els.claimCoinsBtn.addEventListener("click", handleClaimCoins);
+  els.unlockPremiumBtn.addEventListener("click", handleUnlockPremium);
+  els.openStudioBtn.addEventListener("click", openStudio);
+  els.closeStudioBtn.addEventListener("click", closeStudio);
+  els.studioOverlay.addEventListener("click", (e) => {
+    if (e.target === els.studioOverlay) closeStudio();
+  });
+
+  document.querySelectorAll(".app-footer-link").forEach((btn) => {
+    btn.addEventListener("click", () => openLegalModal(btn.dataset.legal));
+  });
+  els.closeLegalBtn.addEventListener("click", closeLegalModal);
+  els.legalModalOverlay.addEventListener("click", (e) => {
+    if (e.target === els.legalModalOverlay) closeLegalModal();
+  });
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (!els.watchOverlay.classList.contains("hidden")) closeWatch();
       if (!els.uploadModalOverlay.classList.contains("hidden")) closeUploadModal();
       if (!els.settingsModalOverlay.classList.contains("hidden")) closeSettingsModal();
+      if (!els.studioOverlay.classList.contains("hidden")) closeStudio();
+      if (!els.legalModalOverlay.classList.contains("hidden")) closeLegalModal();
     }
   });
 
@@ -923,6 +1358,7 @@
     renderSettingsDesignPanel();
     renderSettingsLanguagePanel();
     els.dropzoneHint.textContent = t("upload.dropzoneHint", { max: MAX_TOTAL_MB });
+    els.footerCopyright.textContent = `© ${new Date().getFullYear()} Socialy`;
 
     const user = await Auth.fetchMe();
     if (user) {
@@ -930,6 +1366,10 @@
     } else {
       showAuthGate();
     }
+
+    setInterval(() => {
+      if (Auth.getUser()) refreshCoinsUI();
+    }, 60000);
   }
 
   init();

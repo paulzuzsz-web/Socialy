@@ -4,6 +4,12 @@ import { getStore } from "@netlify/blobs";
 const SESSION_COOKIE = "socialy_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 Tage
 
+// Coin-Wirtschaft
+export const SIGNUP_BONUS_COINS = 100;
+export const DAILY_CLAIM_COINS = 50;
+export const DAILY_CLAIM_COOLDOWN_MS = 20 * 60 * 60 * 1000; // 20 Stunden
+export const PREMIUM_COST_COINS = 1000;
+
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.scryptSync(password, salt, 64).toString("hex");
@@ -48,20 +54,53 @@ export async function createSession(usernameKey) {
   return token;
 }
 
-export async function getSessionUser(req) {
+// Strips internal fields (password hash) before a user record ever reaches the client.
+export function publicUser(user) {
+  return {
+    username: user.username,
+    createdAt: user.createdAt,
+    coins: user.coins || 0,
+    isPremium: !!user.isPremium,
+    lastDailyClaim: user.lastDailyClaim || null,
+  };
+}
+
+export async function getUserRecord(usernameKey) {
+  const usersStore = getStore("users");
+  return usersStore.get(usernameKey, { type: "json" });
+}
+
+export async function saveUserRecord(usernameKey, user) {
+  const usersStore = getStore("users");
+  await usersStore.setJSON(usernameKey, user);
+}
+
+// Returns the raw stored session (with username key) or null.
+async function getSession(req) {
   const cookies = parseCookies(req);
   const token = cookies[SESSION_COOKIE];
   if (!token) return null;
-
   const sessionStore = getStore("sessions");
-  const session = await sessionStore.get(token, { type: "json" });
+  return sessionStore.get(token, { type: "json" });
+}
+
+// Returns the public-safe current user, or null if not authenticated.
+export async function getSessionUser(req) {
+  const session = await getSession(req);
   if (!session) return null;
-
-  const usersStore = getStore("users");
-  const user = await usersStore.get(session.username, { type: "json" });
+  const user = await getUserRecord(session.username);
   if (!user) return null;
+  return publicUser(user);
+}
 
-  return { username: user.username, createdAt: user.createdAt };
+// Returns { key, user } for the full (internal) user record — used when a
+// function needs to mutate the record (coins, premium status, ...).
+export async function getSessionUserRecord(req) {
+  const session = await getSession(req);
+  if (!session) return null;
+  const user = await getUserRecord(session.username);
+  if (!user) return null;
+  return { key: session.username, user };
 }
 
 export async function deleteSession(req) {
