@@ -1,0 +1,10 @@
+{
+  "name": "socialy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Socialy - eine Video-Sharing Plattform (wie TikTok/YouTube) mit Netlify Functions & Netlify Blobs als Backend.",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
