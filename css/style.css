@@ -1,4 +1,13 @@
 :root {
+  --accent-gradient: linear-gradient(135deg, var(--accent1), var(--accent2));
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- Themes ---------- */
+[data-theme="neon"] {
   --bg: #0b0b12;
   --bg-elevated: #15151f;
   --bg-card: #1a1a26;
@@ -7,12 +16,57 @@
   --text-dim: #9c9cb5;
   --accent1: #ff2d78;
   --accent2: #7c3aed;
-  --accent-gradient: linear-gradient(135deg, var(--accent1), var(--accent2));
   --danger: #ff4d5e;
-  --radius-lg: 20px;
-  --radius-md: 14px;
-  --radius-sm: 8px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* "Berg" – Bergsee-Nacht mit Tannengrün, Fels-Grau und Sonnenaufgangs-Amber */
+[data-theme="berg"] {
+  --bg: #0f1712;
+  --bg-elevated: #17231c;
+  --bg-card: #1c2a22;
+  --border: #2d4536;
+  --text: #eef5ee;
+  --text-dim: #9fb5a6;
+  --accent1: #d97742;
+  --accent2: #3f7d5c;
+  --danger: #ff5f5f;
+}
+
+[data-theme="ocean"] {
+  --bg: #071224;
+  --bg-elevated: #0e1e35;
+  --bg-card: #112441;
+  --border: #1d3a5f;
+  --text: #eaf4ff;
+  --text-dim: #8fb0d1;
+  --accent1: #22d3ee;
+  --accent2: #2563eb;
+  --danger: #ff6b6b;
+}
+
+[data-theme="sunset"] {
+  --bg: #1a0f14;
+  --bg-elevated: #24151b;
+  --bg-card: #2c1920;
+  --border: #46232b;
+  --text: #fdf1ec;
+  --text-dim: #cd9f95;
+  --accent1: #fb923c;
+  --accent2: #e11d48;
+  --danger: #ff5757;
+}
+
+[data-theme="light"] {
+  --bg: #f7f7fb;
+  --bg-elevated: #ffffff;
+  --bg-card: #ffffff;
+  --border: #e3e3ec;
+  --text: #17171f;
+  --text-dim: #6b6b80;
+  --accent1: #ff2d78;
+  --accent2: #7c3aed;
+  --danger: #d92d3f;
+  --shadow: 0 10px 30px rgba(20, 20, 40, 0.12);
 }
 
 * {
@@ -256,7 +310,7 @@ main {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  background: linear-gradient(160deg, #23233a, #14141e);
+  background: var(--bg-elevated);
 }
 
 .video-card .thumb-fallback {
@@ -265,7 +319,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(160deg, #23233a, #14141e);
+  background: var(--bg-elevated);
 }
 
 .video-card .thumb-fallback svg {
@@ -712,7 +766,7 @@ main {
 
 .toast.error {
   border-color: var(--danger);
-  color: #ffd7da;
+  color: var(--danger);
 }
 
 @keyframes toast-in {
@@ -760,6 +814,103 @@ main {
   color: var(--text);
   font-size: 13px;
   outline: none;
+}
+
+/* ---------- Dropdowns (language / theme) ---------- */
+.dropdown {
+  position: relative;
+}
+
+.dropdown-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  min-width: 190px;
+  z-index: 60;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background: var(--bg-elevated);
+}
+
+.dropdown-item.active {
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+
+.dropdown-item .check {
+  margin-left: auto;
+  color: var(--accent1);
+  opacity: 0;
+}
+
+.dropdown-item.active .check {
+  opacity: 1;
+}
+
+.theme-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(127, 127, 127, 0.35);
+}
+
+.lang-flag {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+/* ---------- Upload progress ---------- */
+.upload-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.upload-progress-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent-gradient);
+  transition: width 0.2s ease;
+}
+
+.upload-progress span {
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 34px;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 /* ---------- Responsive ---------- */

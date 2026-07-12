@@ -1,9 +1,13 @@
 (() => {
   "use strict";
 
+  const { t, tp, applyI18n, getLanguage, setLanguage, LANGUAGES } = window.SocialyI18n;
+  const { THEMES, getTheme, setTheme, applyTheme } = window.SocialyThemes;
+
   const API = {
     videos: "/api/videos",
-    upload: "/api/upload",
+    uploadChunk: "/api/upload-chunk",
+    uploadFinalize: "/api/upload-finalize",
     video: (id) => `/api/video/${id}`,
     thumbnail: (id) => `/api/thumbnail/${id}`,
     like: (id) => `/api/like/${id}`,
@@ -11,7 +15,10 @@
     comment: (id) => `/api/comment/${id}`,
   };
 
-  const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
+  const MAX_TOTAL_MB = 50;
+  const MAX_TOTAL_BYTES = MAX_TOTAL_MB * 1024 * 1024;
+  const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB pro Chunk (Rohdaten)
+  const CHUNK_CONCURRENCY = 3;
 
   const els = {
     videoGrid: document.getElementById("videoGrid"),
@@ -23,6 +30,11 @@
     userAvatar: document.getElementById("userAvatar"),
     userNameLabel: document.getElementById("userNameLabel"),
 
+    themeBtn: document.getElementById("themeBtn"),
+    themePanel: document.getElementById("themePanel"),
+    langBtn: document.getElementById("langBtn"),
+    langPanel: document.getElementById("langPanel"),
+
     openUploadBtn: document.getElementById("openUploadBtn"),
     uploadModalOverlay: document.getElementById("uploadModalOverlay"),
     closeUploadBtn: document.getElementById("closeUploadBtn"),
@@ -30,6 +42,7 @@
     uploadForm: document.getElementById("uploadForm"),
     dropzone: document.getElementById("dropzone"),
     dropzoneLabel: document.getElementById("dropzoneLabel"),
+    dropzoneHint: document.getElementById("dropzoneHint"),
     fileInput: document.getElementById("fileInput"),
     videoPreviewWrap: document.getElementById("videoPreviewWrap"),
     videoPreview: document.getElementById("videoPreview"),
@@ -39,6 +52,9 @@
     usernameInput: document.getElementById("usernameInput"),
     uploadError: document.getElementById("uploadError"),
     submitUploadBtn: document.getElementById("submitUploadBtn"),
+    uploadProgress: document.getElementById("uploadProgress"),
+    uploadProgressFill: document.getElementById("uploadProgressFill"),
+    uploadProgressLabel: document.getElementById("uploadProgressLabel"),
 
     watchOverlay: document.getElementById("watchOverlay"),
     closeWatchBtn: document.getElementById("closeWatchBtn"),
@@ -99,16 +115,16 @@
   function timeAgo(iso) {
     const diffMs = Date.now() - new Date(iso).getTime();
     const min = Math.floor(diffMs / 60000);
-    if (min < 1) return "gerade eben";
-    if (min < 60) return `vor ${min} Min.`;
+    if (min < 1) return t("time.now");
+    if (min < 60) return t("time.minutes", { n: min });
     const hrs = Math.floor(min / 60);
-    if (hrs < 24) return `vor ${hrs} Std.`;
+    if (hrs < 24) return t("time.hours", { n: hrs });
     const days = Math.floor(hrs / 24);
-    if (days < 30) return `vor ${days} Tag${days === 1 ? "" : "en"}`;
+    if (days < 30) return tp("time.days", days);
     const months = Math.floor(days / 30);
-    if (months < 12) return `vor ${months} Monat${months === 1 ? "" : "en"}`;
+    if (months < 12) return tp("time.months", months);
     const years = Math.floor(months / 12);
-    return `vor ${years} Jahr${years === 1 ? "" : "en"}`;
+    return tp("time.years", years);
   }
 
   function getLikedIds() {
@@ -136,9 +152,72 @@
 
   function refreshUserChip() {
     const name = getUsername();
-    els.userAvatar.textContent = initials(name || "Gast");
-    els.userNameLabel.textContent = name || "Gast";
+    els.userAvatar.textContent = initials(name || t("nav.guest"));
+    els.userNameLabel.textContent = name || t("nav.guest");
     els.usernameInput.value = name;
+  }
+
+  // ---------- Language & Theme dropdowns ----------
+
+  function closeAllDropdowns() {
+    els.themePanel.classList.add("hidden");
+    els.langPanel.classList.add("hidden");
+  }
+
+  function renderThemePanel() {
+    const current = getTheme();
+    els.themePanel.innerHTML = "";
+    THEMES.forEach((theme) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "dropdown-item" + (theme.code === current ? " active" : "");
+      const gradient = `linear-gradient(135deg, ${theme.swatch[0]}, ${theme.swatch[1]})`;
+      btn.innerHTML = `
+        <span class="theme-swatch" style="background:${gradient}"></span>
+        <span>${escapeHtml(t(theme.labelKey))}</span>
+        <span class="check">✓</span>
+      `;
+      btn.addEventListener("click", () => {
+        setTheme(theme.code);
+        renderThemePanel();
+        closeAllDropdowns();
+      });
+      els.themePanel.appendChild(btn);
+    });
+  }
+
+  function renderLangPanel() {
+    const current = getLanguage();
+    els.langPanel.innerHTML = "";
+    LANGUAGES.forEach((lang) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "dropdown-item" + (lang.code === current ? " active" : "");
+      btn.innerHTML = `
+        <span class="lang-flag">${lang.flag}</span>
+        <span>${escapeHtml(lang.label)}</span>
+        <span class="check">✓</span>
+      `;
+      btn.addEventListener("click", () => {
+        setLanguage(lang.code);
+        refreshAllText();
+        closeAllDropdowns();
+      });
+      els.langPanel.appendChild(btn);
+    });
+  }
+
+  function refreshAllText() {
+    applyI18n();
+    refreshUserChip();
+    renderThemePanel();
+    renderLangPanel();
+    renderGrid();
+    els.dropzoneHint.textContent = t("upload.dropzoneHint", { max: MAX_TOTAL_MB });
+    if (currentVideoId) {
+      const video = allVideos.find((v) => v.id === currentVideoId);
+      if (video) renderComments(video.comments || []);
+    }
   }
 
   // ---------- Feed ----------
@@ -146,13 +225,13 @@
   async function loadVideos() {
     try {
       const res = await fetch(API.videos);
-      if (!res.ok) throw new Error("Fehler beim Laden");
+      if (!res.ok) throw new Error("load failed");
       const data = await res.json();
       allVideos = Array.isArray(data.videos) ? data.videos : [];
       renderGrid();
     } catch (err) {
       console.error(err);
-      toast("Videos konnten nicht geladen werden.", "error");
+      toast(t("upload.loadError"), "error");
     }
   }
 
@@ -166,9 +245,7 @@
         )
       : allVideos;
 
-    els.videoCountLabel.textContent = allVideos.length
-      ? `${allVideos.length} Video${allVideos.length === 1 ? "" : "s"}`
-      : "";
+    els.videoCountLabel.textContent = allVideos.length ? tp("feed.count", allVideos.length) : "";
 
     els.videoGrid.innerHTML = "";
 
@@ -275,11 +352,11 @@
   }
 
   function renderComments(comments) {
-    els.commentCountLabel.textContent = `Kommentare (${comments.length})`;
+    els.commentCountLabel.textContent = t("watch.commentsCount", { n: comments.length });
     els.commentList.innerHTML = "";
 
     if (!comments.length) {
-      els.commentList.innerHTML = `<p class="no-comments">Noch keine Kommentare. Sei die/der Erste!</p>`;
+      els.commentList.innerHTML = `<p class="no-comments">${escapeHtml(t("watch.noComments"))}</p>`;
       return;
     }
 
@@ -304,12 +381,12 @@
     const id = currentVideoId;
     const likedIds = getLikedIds();
     if (likedIds.has(id)) {
-      toast("Du hast dieses Video bereits geliked.");
+      toast(t("watch.alreadyLiked"));
       return;
     }
     try {
       const res = await fetch(API.like(id), { method: "POST" });
-      if (!res.ok) throw new Error("Like fehlgeschlagen");
+      if (!res.ok) throw new Error("like failed");
       const data = await res.json();
       addLikedId(id);
       els.likeBtn.classList.add("liked");
@@ -318,7 +395,7 @@
       if (video) video.likes = data.likes;
     } catch (err) {
       console.error(err);
-      toast("Like konnte nicht gespeichert werden.", "error");
+      toast(t("watch.likeError"), "error");
     }
   }
 
@@ -336,7 +413,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ author, text }),
       });
-      if (!res.ok) throw new Error("Kommentar fehlgeschlagen");
+      if (!res.ok) throw new Error("comment failed");
       const data = await res.json();
       els.commentInput.value = "";
       renderComments(data.comments);
@@ -344,7 +421,7 @@
       if (video) video.comments = data.comments;
     } catch (err) {
       console.error(err);
-      toast("Kommentar konnte nicht gesendet werden.", "error");
+      toast(t("watch.commentError"), "error");
     }
   }
 
@@ -367,9 +444,10 @@
     selectedThumbnailDataUrl = null;
     els.videoPreviewWrap.classList.add("hidden");
     els.videoPreview.removeAttribute("src");
-    els.dropzoneLabel.textContent = "Video auswählen oder hierher ziehen";
+    els.dropzoneLabel.textContent = t("upload.dropzoneLabel");
     els.uploadError.classList.remove("show");
     els.uploadError.textContent = "";
+    setUploadProgress(null);
     setSubmitLoading(false);
   }
 
@@ -380,20 +458,34 @@
 
   function setSubmitLoading(loading) {
     els.submitUploadBtn.disabled = loading;
-    els.submitUploadBtn.innerHTML = loading
-      ? `<span class="spinner"></span> Wird veröffentlicht...`
-      : "Veröffentlichen";
+    if (!loading) els.submitUploadBtn.textContent = t("upload.submit");
+  }
+
+  function setUploadProgress(percent) {
+    if (percent === null) {
+      els.uploadProgress.classList.add("hidden");
+      return;
+    }
+    els.uploadProgress.classList.remove("hidden");
+    const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+    els.uploadProgressFill.style.width = clamped + "%";
+    els.uploadProgressLabel.textContent = clamped + "%";
+    els.submitUploadBtn.textContent =
+      clamped >= 100 ? t("upload.finalizing") : t("upload.uploading", { percent: clamped });
   }
 
   function handleFileSelected(file) {
     if (!file) return;
     if (!file.type.startsWith("video/")) {
-      showUploadError("Bitte eine Videodatei auswählen.");
+      showUploadError(t("upload.errNotVideo"));
       return;
     }
-    if (file.size > MAX_VIDEO_BYTES) {
+    if (file.size > MAX_TOTAL_BYTES) {
       showUploadError(
-        `Die Datei ist zu groß (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximal ${(MAX_VIDEO_BYTES / 1024 / 1024).toFixed(1)} MB erlaubt.`
+        t("upload.errTooBig", {
+          size: (file.size / 1024 / 1024).toFixed(1),
+          max: MAX_TOTAL_MB,
+        })
       );
       return;
     }
@@ -445,17 +537,49 @@
     );
   }
 
-  function fileToBase64(file) {
+  function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result;
-        const base64 = String(result).split(",").pop();
-        resolve(base64);
-      };
+      reader.onload = () => resolve(String(reader.result).split(",").pop());
       reader.onerror = reject;
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(blob);
     });
+  }
+
+  async function uploadFileInChunks(file, uploadId, onProgress) {
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    let completed = 0;
+
+    async function uploadOne(index) {
+      const start = index * CHUNK_SIZE;
+      const end = Math.min(file.size, start + CHUNK_SIZE);
+      const chunkBase64 = await blobToBase64(file.slice(start, end));
+
+      const res = await fetch(API.uploadChunk, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: uploadId, index, chunkBase64 }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "chunk upload failed");
+      }
+
+      completed += 1;
+      onProgress(completed / totalChunks);
+    }
+
+    const queue = Array.from({ length: totalChunks }, (_, i) => i);
+    const workers = Array.from({ length: Math.min(CHUNK_CONCURRENCY, totalChunks) }, async () => {
+      while (queue.length) {
+        const index = queue.shift();
+        await uploadOne(index);
+      }
+    });
+
+    await Promise.all(workers);
+    return totalChunks;
   }
 
   async function handleUploadSubmit(e) {
@@ -467,32 +591,38 @@
     const username = els.usernameInput.value.trim();
 
     if (!selectedFile) {
-      showUploadError("Bitte zuerst ein Video auswählen.");
+      showUploadError(t("upload.errNeedFile"));
       return;
     }
     if (!title) {
-      showUploadError("Bitte einen Titel eingeben.");
+      showUploadError(t("upload.errNeedTitle"));
       return;
     }
     if (!username) {
-      showUploadError("Bitte einen Namen eingeben.");
+      showUploadError(t("upload.errNeedUsername"));
       return;
     }
 
     setSubmitLoading(true);
+    setUploadProgress(0);
 
     try {
-      const videoBase64 = await fileToBase64(selectedFile);
+      const uploadId = crypto.randomUUID();
 
-      const res = await fetch(API.upload, {
+      const totalChunks = await uploadFileInChunks(selectedFile, uploadId, (fraction) =>
+        setUploadProgress(fraction * 100)
+      );
+
+      const res = await fetch(API.uploadFinalize, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: uploadId,
+          totalChunks,
           title,
           description,
           username,
           videoType: selectedFile.type || "video/mp4",
-          videoBase64,
           thumbnailBase64: selectedThumbnailDataUrl,
         }),
       });
@@ -500,19 +630,20 @@
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Upload fehlgeschlagen");
+        throw new Error(data.error || "finalize failed");
       }
 
       setUsername(username);
-      toast("Video wurde veröffentlicht! 🎉");
+      toast(t("upload.success"));
       closeUploadModal();
       await loadVideos();
       if (data.id) openWatch(data.id);
     } catch (err) {
       console.error(err);
-      showUploadError(err.message || "Upload fehlgeschlagen. Bitte erneut versuchen.");
+      showUploadError(err.message && err.message !== "finalize failed" ? err.message : t("upload.errFailed"));
     } finally {
       setSubmitLoading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -566,9 +697,25 @@
 
   els.userChipBtn.addEventListener("click", () => {
     const current = getUsername();
-    const name = prompt("Wie sollen wir dich nennen?", current || "");
+    const name = prompt(t("nav.changeNamePrompt"), current || "");
     if (name && name.trim()) setUsername(name.trim());
   });
+
+  els.themeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willOpen = els.themePanel.classList.contains("hidden");
+    closeAllDropdowns();
+    if (willOpen) els.themePanel.classList.remove("hidden");
+  });
+
+  els.langBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willOpen = els.langPanel.classList.contains("hidden");
+    closeAllDropdowns();
+    if (willOpen) els.langPanel.classList.remove("hidden");
+  });
+
+  document.addEventListener("click", closeAllDropdowns);
 
   els.onboardSaveBtn.addEventListener("click", saveOnboardName);
   els.onboardNameInput.addEventListener("keydown", (e) => {
@@ -579,12 +726,18 @@
     if (e.key === "Escape") {
       if (!els.watchOverlay.classList.contains("hidden")) closeWatch();
       if (!els.uploadModalOverlay.classList.contains("hidden")) closeUploadModal();
+      closeAllDropdowns();
     }
   });
 
   // ---------- Init ----------
 
+  applyTheme(getTheme());
+  applyI18n();
   refreshUserChip();
+  renderThemePanel();
+  renderLangPanel();
+  els.dropzoneHint.textContent = t("upload.dropzoneHint", { max: MAX_TOTAL_MB });
   maybeShowOnboarding();
   loadVideos();
 })();

@@ -1,10 +1,20 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-theme="neon">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Socialy – Teile deine Videos</title>
 <meta name="description" content="Socialy – lade Videos hoch und teile sie mit der Welt." />
+<script>
+  (function () {
+    try {
+      var theme = localStorage.getItem("socialy_theme") || "neon";
+      document.documentElement.setAttribute("data-theme", theme);
+      var lang = localStorage.getItem("socialy_lang");
+      if (lang) document.documentElement.setAttribute("lang", lang);
+    } catch (e) {}
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -33,7 +43,7 @@
       <circle cx="11" cy="11" r="7"></circle>
       <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
     </svg>
-    <input id="searchInput" type="text" placeholder="Videos durchsuchen..." autocomplete="off" />
+    <input id="searchInput" type="text" data-i18n-placeholder="nav.searchPlaceholder" placeholder="Videos durchsuchen..." autocomplete="off" />
   </div>
 
   <div class="header-actions">
@@ -42,9 +52,34 @@
         <line x1="12" y1="5" x2="12" y2="19"></line>
         <line x1="5" y1="12" x2="19" y2="12"></line>
       </svg>
-      Hochladen
+      <span data-i18n="nav.upload">Hochladen</span>
     </button>
-    <button class="user-chip" id="userChipBtn" title="Namen ändern">
+
+    <div class="dropdown" id="themeDropdown">
+      <button class="btn btn-icon" id="themeBtn" data-i18n-title="nav.theme" title="Design ändern">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="9"></circle>
+          <circle cx="9" cy="10" r="1.1" fill="currentColor" stroke="none"></circle>
+          <circle cx="14.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"></circle>
+          <circle cx="16" cy="13.5" r="1.1" fill="currentColor" stroke="none"></circle>
+          <circle cx="11" cy="16" r="1.1" fill="currentColor" stroke="none"></circle>
+        </svg>
+      </button>
+      <div class="dropdown-panel hidden" id="themePanel"></div>
+    </div>
+
+    <div class="dropdown" id="langDropdown">
+      <button class="btn btn-icon" id="langBtn" data-i18n-title="nav.language" title="Sprache ändern">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="9"></circle>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"></path>
+        </svg>
+      </button>
+      <div class="dropdown-panel hidden" id="langPanel"></div>
+    </div>
+
+    <button class="user-chip" id="userChipBtn" data-i18n-title="nav.changeNamePrompt" title="Namen ändern">
       <span class="avatar" id="userAvatar">?</span>
       <span id="userNameLabel">Gast</span>
     </button>
@@ -53,7 +88,7 @@
 
 <main>
   <div class="feed-heading">
-    <h1>Für dich</h1>
+    <h1 data-i18n="feed.heading">Für dich</h1>
     <span id="videoCountLabel"></span>
   </div>
 
@@ -64,14 +99,14 @@
       <rect x="2" y="5" width="15" height="14" rx="2"></rect>
       <path d="M17 9l5-3v12l-5-3"></path>
     </svg>
-    <h2>Noch keine Videos</h2>
-    <p>Sei die/der Erste und lade ein Video hoch!</p>
+    <h2 data-i18n="empty.title">Noch keine Videos</h2>
+    <p data-i18n="empty.desc">Sei die/der Erste und lade ein Video hoch!</p>
   </div>
 </main>
 
 <!-- Watch overlay -->
 <div class="watch-overlay hidden" id="watchOverlay">
-  <button class="btn btn-icon watch-close" id="closeWatchBtn" title="Schließen">
+  <button class="btn btn-icon watch-close" id="closeWatchBtn" data-i18n-title="watch.close" title="Schließen">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
       <line x1="18" y1="6" x2="6" y2="18"></line>
       <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -109,8 +144,8 @@
       <div class="comments-section">
         <h3 id="commentCountLabel">Kommentare</h3>
         <form class="comment-form" id="commentForm">
-          <input type="text" id="commentInput" placeholder="Kommentar schreiben..." maxlength="500" autocomplete="off" />
-          <button type="submit" class="btn btn-primary" style="padding:10px 16px;">Senden</button>
+          <input type="text" id="commentInput" data-i18n-placeholder="watch.commentPlaceholder" placeholder="Kommentar schreiben..." maxlength="500" autocomplete="off" />
+          <button type="submit" class="btn btn-primary" style="padding:10px 16px;" data-i18n="watch.send">Senden</button>
         </form>
         <div class="comment-list" id="commentList"></div>
       </div>
@@ -122,7 +157,7 @@
 <div class="modal-overlay hidden" id="uploadModalOverlay">
   <div class="modal">
     <div class="modal-head">
-      <h2>Video hochladen</h2>
+      <h2 data-i18n="upload.title">Video hochladen</h2>
       <button class="btn btn-icon" id="closeUploadBtn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -137,8 +172,8 @@
           <path d="M12 16V4M12 4l-4 4M12 4l4 4"></path>
           <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
         </svg>
-        <div id="dropzoneLabel">Video auswählen oder hierher ziehen</div>
-        <small>MP4, WebM oder MOV – max. 4 MB</small>
+        <div id="dropzoneLabel" data-i18n="upload.dropzoneLabel">Video auswählen oder hierher ziehen</div>
+        <small id="dropzoneHint">MP4, WebM oder MOV – max. 50 MB</small>
         <input type="file" id="fileInput" accept="video/mp4,video/webm,video/quicktime,video/*" hidden />
       </div>
 
@@ -147,26 +182,33 @@
       </div>
       <canvas id="thumbCanvas" class="hidden" width="360" height="640"></canvas>
 
-      <div class="field">
-        <label for="titleInput">Titel *</label>
-        <input type="text" id="titleInput" maxlength="120" placeholder="Wie heißt dein Video?" required />
+      <div class="upload-progress hidden" id="uploadProgress">
+        <div class="upload-progress-bar">
+          <div class="upload-progress-fill" id="uploadProgressFill"></div>
+        </div>
+        <span id="uploadProgressLabel">0%</span>
       </div>
 
       <div class="field">
-        <label for="descriptionInput">Beschreibung</label>
-        <textarea id="descriptionInput" maxlength="2000" placeholder="Erzähl etwas über dein Video..."></textarea>
+        <label for="titleInput" data-i18n="upload.titleLabel">Titel *</label>
+        <input type="text" id="titleInput" maxlength="120" data-i18n-placeholder="upload.titlePlaceholder" placeholder="Wie heißt dein Video?" required />
       </div>
 
       <div class="field">
-        <label for="usernameInput">Dein Name *</label>
-        <input type="text" id="usernameInput" maxlength="40" placeholder="Benutzername" required />
+        <label for="descriptionInput" data-i18n="upload.descLabel">Beschreibung</label>
+        <textarea id="descriptionInput" maxlength="2000" data-i18n-placeholder="upload.descPlaceholder" placeholder="Erzähl etwas über dein Video..."></textarea>
+      </div>
+
+      <div class="field">
+        <label for="usernameInput" data-i18n="upload.usernameLabel">Dein Name *</label>
+        <input type="text" id="usernameInput" maxlength="40" data-i18n-placeholder="upload.usernamePlaceholder" placeholder="Benutzername" required />
       </div>
 
       <div class="form-error" id="uploadError"></div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" id="cancelUploadBtn">Abbrechen</button>
-        <button type="submit" class="btn btn-primary" id="submitUploadBtn">Veröffentlichen</button>
+        <button type="button" class="btn btn-ghost" id="cancelUploadBtn" data-i18n="upload.cancel">Abbrechen</button>
+        <button type="submit" class="btn btn-primary" id="submitUploadBtn" data-i18n="upload.submit">Veröffentlichen</button>
       </div>
     </form>
   </div>
@@ -174,15 +216,17 @@
 
 <!-- Onboarding banner -->
 <div class="onboard-banner hidden" id="onboardBanner">
-  <p>Wie sollen wir dich nennen?</p>
+  <p data-i18n="onboard.text">Wie sollen wir dich nennen?</p>
   <div class="row">
-    <input type="text" id="onboardNameInput" maxlength="40" placeholder="Dein Name" autocomplete="off" />
-    <button class="btn btn-primary" id="onboardSaveBtn">OK</button>
+    <input type="text" id="onboardNameInput" maxlength="40" data-i18n-placeholder="onboard.placeholder" placeholder="Dein Name" autocomplete="off" />
+    <button class="btn btn-primary" id="onboardSaveBtn" data-i18n="onboard.save">OK</button>
   </div>
 </div>
 
 <div class="toast-stack" id="toastStack"></div>
 
+<script src="/js/i18n.js"></script>
+<script src="/js/themes.js"></script>
 <script src="/js/app.js"></script>
 </body>
 </html>

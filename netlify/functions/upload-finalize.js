@@ -1,14 +1,11 @@
 import { getStore } from "@netlify/blobs";
 import { json, errorResponse } from "./utils.js";
 
-// Serverless Functions haben ein begrenztes Request-Limit (~6 MB).
-// Wir erlauben daher max. 4 MB Rohdatengröße pro Video (Base64 legt ~33% drauf).
-const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
+// Gesamtgröße nach dem Zusammenfügen aller Chunks.
+const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 
 export default async (req) => {
-  if (req.method !== "POST") {
-    return errorResponse("Method not allowed", 405);
-  }
+  if (req.method !== "POST") return errorResponse("Method not allowed", 405);
 
   let body;
   try {
@@ -18,42 +15,57 @@ export default async (req) => {
   }
 
   const {
+    id,
+    totalChunks,
     title,
     description = "",
     username,
-    videoBase64,
     videoType,
     thumbnailBase64,
   } = body || {};
 
+  if (!id || typeof id !== "string") return errorResponse("Fehlende Upload-ID");
+  if (!Number.isInteger(totalChunks) || totalChunks < 1) {
+    return errorResponse("Ungültige Chunk-Anzahl");
+  }
   if (!title || !title.trim()) return errorResponse("Titel fehlt");
   if (!username || !username.trim()) return errorResponse("Benutzername fehlt");
-  if (!videoBase64) return errorResponse("Kein Video übermittelt");
 
-  let videoBuffer;
-  try {
-    videoBuffer = Buffer.from(videoBase64, "base64");
-  } catch {
-    return errorResponse("Video konnte nicht gelesen werden");
+  const chunkStore = getStore("video-chunks");
+  const parts = [];
+  let totalBytes = 0;
+
+  for (let i = 0; i < totalChunks; i++) {
+    const key = `${id}:${i}`;
+    const chunk = await chunkStore.get(key, { type: "arrayBuffer" });
+    if (!chunk) {
+      return errorResponse(`Chunk ${i} fehlt – Upload unvollständig`, 400);
+    }
+    const buf = Buffer.from(chunk);
+    totalBytes += buf.byteLength;
+
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      for (let j = 0; j <= i; j++) {
+        await chunkStore.delete(`${id}:${j}`).catch(() => {});
+      }
+      return errorResponse(
+        `Video ist zu groß (max. ${(MAX_TOTAL_BYTES / 1024 / 1024).toFixed(0)} MB).`,
+        413
+      );
+    }
+    parts.push(buf);
   }
 
-  if (videoBuffer.byteLength === 0) {
-    return errorResponse("Video ist leer");
-  }
-
-  if (videoBuffer.byteLength > MAX_VIDEO_BYTES) {
-    return errorResponse(
-      `Video ist zu groß (max. ${(MAX_VIDEO_BYTES / 1024 / 1024).toFixed(1)} MB). Bitte ein kürzeres oder stärker komprimiertes Video hochladen.`,
-      413
-    );
-  }
-
-  const id = crypto.randomUUID();
+  const videoBuffer = Buffer.concat(parts);
 
   const videoStore = getStore("video-files");
   await videoStore.set(id, videoBuffer, {
     metadata: { contentType: videoType || "video/mp4" },
   });
+
+  for (let i = 0; i < totalChunks; i++) {
+    await chunkStore.delete(`${id}:${i}`).catch(() => {});
+  }
 
   let hasThumbnail = false;
   if (thumbnailBase64) {
@@ -91,4 +103,4 @@ export default async (req) => {
   return json({ ok: true, id, video: meta }, { status: 201 });
 };
 
-export const config = { path: "/api/upload" };
+export const config = { path: "/api/upload-finalize" };
