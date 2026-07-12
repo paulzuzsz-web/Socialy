@@ -1,11 +1,15 @@
 import { getStore } from "@netlify/blobs";
 import { json, errorResponse } from "./utils.js";
+import { getSessionUser } from "./auth-utils.js";
 
 // Gesamtgröße nach dem Zusammenfügen aller Chunks.
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 
 export default async (req) => {
   if (req.method !== "POST") return errorResponse("Method not allowed", 405);
+
+  const sessionUser = await getSessionUser(req);
+  if (!sessionUser) return errorResponse("Bitte melde dich an.", 401);
 
   let body;
   try {
@@ -14,22 +18,13 @@ export default async (req) => {
     return errorResponse("Ungültiger Request-Body");
   }
 
-  const {
-    id,
-    totalChunks,
-    title,
-    description = "",
-    username,
-    videoType,
-    thumbnailBase64,
-  } = body || {};
+  const { id, totalChunks, title, description = "", videoType, thumbnailBase64 } = body || {};
 
   if (!id || typeof id !== "string") return errorResponse("Fehlende Upload-ID");
   if (!Number.isInteger(totalChunks) || totalChunks < 1) {
     return errorResponse("Ungültige Chunk-Anzahl");
   }
   if (!title || !title.trim()) return errorResponse("Titel fehlt");
-  if (!username || !username.trim()) return errorResponse("Benutzername fehlt");
 
   const chunkStore = getStore("video-chunks");
   const parts = [];
@@ -91,10 +86,11 @@ export default async (req) => {
     id,
     title: title.trim().slice(0, 120),
     description: description.trim().slice(0, 2000),
-    username: username.trim().slice(0, 40),
+    username: sessionUser.username,
     createdAt: new Date().toISOString(),
     views: 0,
     likes: 0,
+    likedBy: [],
     comments: [],
     hasThumbnail,
   };
