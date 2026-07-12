@@ -1,8 +1,12 @@
 import { getStore } from "@netlify/blobs";
 import { json, errorResponse } from "./utils.js";
+import { getSessionUser } from "./auth-utils.js";
 
 export default async (req, context) => {
   if (req.method !== "POST") return errorResponse("Method not allowed", 405);
+
+  const sessionUser = await getSessionUser(req);
+  if (!sessionUser) return errorResponse("Bitte melde dich an.", 401);
 
   const id = context.params.id;
 
@@ -13,7 +17,6 @@ export default async (req, context) => {
     return errorResponse("Ungültiger Request-Body");
   }
 
-  const author = (body.author || "Anonym").trim().slice(0, 40) || "Anonym";
   const text = (body.text || "").trim().slice(0, 500);
   if (!text) return errorResponse("Kommentar ist leer");
 
@@ -23,7 +26,7 @@ export default async (req, context) => {
 
   const comment = {
     id: crypto.randomUUID(),
-    author,
+    author: sessionUser.username,
     text,
     createdAt: new Date().toISOString(),
   };

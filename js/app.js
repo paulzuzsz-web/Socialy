@@ -3,6 +3,7 @@
 
   const { t, tp, applyI18n, getLanguage, setLanguage, LANGUAGES } = window.SocialyI18n;
   const { THEMES, getTheme, setTheme, applyTheme } = window.SocialyThemes;
+  const Auth = window.SocialyAuth;
 
   const API = {
     videos: "/api/videos",
@@ -22,23 +23,43 @@
   const NEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // "Neu"-Filter: letzte 7 Tage
 
   const els = {
+    authGate: document.getElementById("authGate"),
+    authTabs: document.getElementById("authTabs"),
+    loginForm: document.getElementById("loginForm"),
+    loginUsername: document.getElementById("loginUsername"),
+    loginPassword: document.getElementById("loginPassword"),
+    loginError: document.getElementById("loginError"),
+    loginSubmitBtn: document.getElementById("loginSubmitBtn"),
+    registerForm: document.getElementById("registerForm"),
+    registerUsername: document.getElementById("registerUsername"),
+    registerPassword: document.getElementById("registerPassword"),
+    registerPasswordConfirm: document.getElementById("registerPasswordConfirm"),
+    registerError: document.getElementById("registerError"),
+    registerSubmitBtn: document.getElementById("registerSubmitBtn"),
+
+    appRoot: document.getElementById("appRoot"),
+
     videoGrid: document.getElementById("videoGrid"),
     emptyState: document.getElementById("emptyState"),
     videoCountLabel: document.getElementById("videoCountLabel"),
-    feedHeading: document.getElementById("feedHeading"),
     searchInput: document.getElementById("searchInput"),
     searchBtn: document.getElementById("searchBtn"),
     filterRow: document.getElementById("filterRow"),
-    mineFilterPill: document.getElementById("mineFilterPill"),
 
     userChipBtn: document.getElementById("userChipBtn"),
     userAvatar: document.getElementById("userAvatar"),
     userNameLabel: document.getElementById("userNameLabel"),
+    settingsBtn: document.getElementById("settingsBtn"),
 
-    themeBtn: document.getElementById("themeBtn"),
-    themePanel: document.getElementById("themePanel"),
-    langBtn: document.getElementById("langBtn"),
-    langPanel: document.getElementById("langPanel"),
+    settingsModalOverlay: document.getElementById("settingsModalOverlay"),
+    closeSettingsBtn: document.getElementById("closeSettingsBtn"),
+    settingsTabs: document.getElementById("settingsTabs"),
+    settingsAvatar: document.getElementById("settingsAvatar"),
+    settingsUsername: document.getElementById("settingsUsername"),
+    settingsMemberSince: document.getElementById("settingsMemberSince"),
+    settingsLogoutBtn: document.getElementById("settingsLogoutBtn"),
+    settingsDesignPanel: document.getElementById("settingsDesignPanel"),
+    settingsLanguagePanel: document.getElementById("settingsLanguagePanel"),
 
     openUploadBtn: document.getElementById("openUploadBtn"),
     uploadModalOverlay: document.getElementById("uploadModalOverlay"),
@@ -54,7 +75,6 @@
     thumbCanvas: document.getElementById("thumbCanvas"),
     titleInput: document.getElementById("titleInput"),
     descriptionInput: document.getElementById("descriptionInput"),
-    usernameInput: document.getElementById("usernameInput"),
     uploadError: document.getElementById("uploadError"),
     submitUploadBtn: document.getElementById("submitUploadBtn"),
     uploadProgress: document.getElementById("uploadProgress"),
@@ -76,10 +96,6 @@
     commentInput: document.getElementById("commentInput"),
     commentList: document.getElementById("commentList"),
     commentCountLabel: document.getElementById("commentCountLabel"),
-
-    onboardBanner: document.getElementById("onboardBanner"),
-    onboardNameInput: document.getElementById("onboardNameInput"),
-    onboardSaveBtn: document.getElementById("onboardSaveBtn"),
 
     toastStack: document.getElementById("toastStack"),
 
@@ -140,72 +156,61 @@
     return tp("time.years", years);
   }
 
-  function getLikedIds() {
-    try {
-      return new Set(JSON.parse(localStorage.getItem("socialy_liked") || "[]"));
-    } catch {
-      return new Set();
-    }
-  }
-
-  function addLikedId(id) {
-    const set = getLikedIds();
-    set.add(id);
-    localStorage.setItem("socialy_liked", JSON.stringify([...set]));
-  }
-
   function getUsername() {
-    return localStorage.getItem("socialy_username") || "";
-  }
-
-  function setUsername(name) {
-    localStorage.setItem("socialy_username", name);
-    refreshUserChip();
+    const user = Auth.getUser();
+    return user ? user.username : "";
   }
 
   function refreshUserChip() {
     const name = getUsername();
     els.userAvatar.textContent = initials(name || t("nav.guest"));
     els.userNameLabel.textContent = name || t("nav.guest");
-    els.usernameInput.value = name;
-  }
-
-  // ---------- Language & Theme dropdowns ----------
-
-  function closeAllDropdowns() {
-    els.themePanel.classList.add("hidden");
-    els.langPanel.classList.add("hidden");
   }
 
   function checkIcon() {
     return `<span class="check"><svg class="ico"><use href="#ic-check"></use></svg></span>`;
   }
 
-  function renderThemePanel() {
-    const current = getTheme();
-    els.themePanel.innerHTML = "";
-    THEMES.forEach((theme) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "dropdown-item" + (theme.code === current ? " active" : "");
-      const gradient = `linear-gradient(135deg, ${theme.swatch[0]}, ${theme.swatch[1]})`;
-      btn.innerHTML = `
-        <span class="theme-swatch" style="background:${gradient}"></span>
-        <span>${escapeHtml(t(theme.labelKey))}</span>
-        ${checkIcon()}
-      `;
-      btn.addEventListener("click", () => {
-        setTheme(theme.code);
-        renderThemePanel();
-        closeAllDropdowns();
-      });
-      els.themePanel.appendChild(btn);
-    });
+  // ---------- Settings modal ----------
+
+  function renderSettingsAccount() {
+    const user = Auth.getUser();
+    if (!user) return;
+    els.settingsAvatar.textContent = initials(user.username);
+    els.settingsUsername.textContent = user.username;
+    const date = user.createdAt ? new Date(user.createdAt).toLocaleDateString(getLanguage()) : "";
+    els.settingsMemberSince.textContent = t("settings.memberSince", { date });
   }
 
-  function renderLangPanel() {
+  function renderSettingsDesignPanel() {
+    const current = getTheme();
+    els.settingsDesignPanel.innerHTML = "";
+    const grid = document.createElement("div");
+    grid.className = "theme-grid";
+    THEMES.forEach((theme) => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "theme-card" + (theme.code === current ? " active" : "");
+      const gradient = `linear-gradient(135deg, ${theme.swatch[0]}, ${theme.swatch[1]})`;
+      card.innerHTML = `
+        <span class="theme-preview" style="background:${gradient}"></span>
+        <span class="theme-card-label">
+          <span>${escapeHtml(t(theme.labelKey))}</span>
+          ${checkIcon()}
+        </span>
+      `;
+      card.addEventListener("click", () => {
+        setTheme(theme.code);
+        renderSettingsDesignPanel();
+      });
+      grid.appendChild(card);
+    });
+    els.settingsDesignPanel.appendChild(grid);
+  }
+
+  function renderSettingsLanguagePanel() {
     const current = getLanguage();
-    els.langPanel.innerHTML = "";
+    els.settingsLanguagePanel.innerHTML = "";
     LANGUAGES.forEach((lang) => {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -218,17 +223,36 @@
       btn.addEventListener("click", () => {
         setLanguage(lang.code);
         refreshAllText();
-        closeAllDropdowns();
       });
-      els.langPanel.appendChild(btn);
+      els.settingsLanguagePanel.appendChild(btn);
     });
+  }
+
+  function switchSettingsTab(tabName) {
+    [...els.settingsTabs.querySelectorAll(".settings-tab")].forEach((b) =>
+      b.classList.toggle("active", b.dataset.settingstab === tabName)
+    );
+    els.settingsModalOverlay.querySelectorAll(".settings-panel").forEach((panel) => {
+      panel.classList.toggle("hidden", panel.dataset.panel !== tabName);
+    });
+  }
+
+  function openSettingsModal(tabName = "account") {
+    renderSettingsAccount();
+    switchSettingsTab(tabName);
+    els.settingsModalOverlay.classList.remove("hidden");
+  }
+
+  function closeSettingsModal() {
+    els.settingsModalOverlay.classList.add("hidden");
   }
 
   function refreshAllText() {
     applyI18n();
     refreshUserChip();
-    renderThemePanel();
-    renderLangPanel();
+    renderSettingsAccount();
+    renderSettingsDesignPanel();
+    renderSettingsLanguagePanel();
     renderGrid();
     els.dropzoneHint.textContent = t("upload.dropzoneHint", { max: MAX_TOTAL_MB });
     if (currentVideoId) {
@@ -240,12 +264,6 @@
   // ---------- Filters ----------
 
   function setFilter(filter) {
-    if (filter === "mine" && !getUsername()) {
-      toast(t("nav.changeNamePrompt"));
-      els.onboardBanner.classList.remove("hidden");
-      els.onboardNameInput.focus();
-      return;
-    }
     currentFilter = filter;
     [...els.filterRow.querySelectorAll(".filter-pill")].forEach((pill) => {
       pill.classList.toggle("active", pill.dataset.filter === filter);
@@ -386,7 +404,8 @@
     els.likeCount.textContent = formatCount(video.likes);
     els.viewCount.textContent = formatCount(video.views);
 
-    const liked = getLikedIds().has(id);
+    const likedBy = Array.isArray(video.likedBy) ? video.likedBy : [];
+    const liked = likedBy.includes(getUsername().toLowerCase());
     els.likeBtn.classList.toggle("liked", liked);
 
     renderComments(video.comments || []);
@@ -443,20 +462,24 @@
   async function handleLike() {
     if (!currentVideoId) return;
     const id = currentVideoId;
-    const likedIds = getLikedIds();
-    if (likedIds.has(id)) {
-      toast(t("watch.alreadyLiked"));
-      return;
-    }
+
     try {
       const res = await fetch(API.like(id), { method: "POST" });
       if (!res.ok) throw new Error("like failed");
       const data = await res.json();
-      addLikedId(id);
+
+      if (data.alreadyLiked) {
+        toast(t("watch.alreadyLiked"));
+        return;
+      }
+
       els.likeBtn.classList.add("liked");
       els.likeCount.textContent = formatCount(data.likes);
       const video = allVideos.find((v) => v.id === id);
-      if (video) video.likes = data.likes;
+      if (video) {
+        video.likes = data.likes;
+        video.likedBy = [...(Array.isArray(video.likedBy) ? video.likedBy : []), getUsername().toLowerCase()];
+      }
     } catch (err) {
       console.error(err);
       toast(t("watch.likeError"), "error");
@@ -469,13 +492,11 @@
     const text = els.commentInput.value.trim();
     if (!text) return;
 
-    const author = getUsername() || "Anonym";
-
     try {
       const res = await fetch(API.comment(currentVideoId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ author, text }),
+        body: JSON.stringify({ text }),
       });
       if (!res.ok) throw new Error("comment failed");
       const data = await res.json();
@@ -493,7 +514,6 @@
 
   function openUploadModal() {
     resetUploadForm();
-    els.usernameInput.value = getUsername();
     els.uploadModalOverlay.classList.remove("hidden");
   }
 
@@ -652,7 +672,6 @@
 
     const title = els.titleInput.value.trim();
     const description = els.descriptionInput.value.trim();
-    const username = els.usernameInput.value.trim();
 
     if (!selectedFile) {
       showUploadError(t("upload.errNeedFile"));
@@ -660,10 +679,6 @@
     }
     if (!title) {
       showUploadError(t("upload.errNeedTitle"));
-      return;
-    }
-    if (!username) {
-      showUploadError(t("upload.errNeedUsername"));
       return;
     }
 
@@ -685,7 +700,6 @@
           totalChunks,
           title,
           description,
-          username,
           videoType: selectedFile.type || "video/mp4",
           thumbnailBase64: selectedThumbnailDataUrl,
         }),
@@ -697,7 +711,6 @@
         throw new Error(data.error || "finalize failed");
       }
 
-      setUsername(username);
       toast(t("upload.success"));
       closeUploadModal();
       await loadVideos();
@@ -711,22 +724,122 @@
     }
   }
 
-  // ---------- Onboarding ----------
+  // ---------- Auth ----------
 
-  function maybeShowOnboarding() {
-    if (!getUsername()) {
-      els.onboardBanner.classList.remove("hidden");
+  function switchAuthTab(tabName) {
+    [...els.authTabs.querySelectorAll(".auth-tab")].forEach((b) =>
+      b.classList.toggle("active", b.dataset.authtab === tabName)
+    );
+    els.loginForm.classList.toggle("hidden", tabName !== "login");
+    els.registerForm.classList.toggle("hidden", tabName !== "register");
+  }
+
+  function showFieldError(el, msg) {
+    el.textContent = msg;
+    el.classList.add("show");
+  }
+
+  async function enterApp() {
+    els.authGate.classList.add("hidden");
+    els.appRoot.classList.remove("hidden");
+    applyTheme(getTheme());
+    refreshUserChip();
+    await loadVideos();
+  }
+
+  function showAuthGate() {
+    els.appRoot.classList.add("hidden");
+    els.authGate.classList.remove("hidden");
+    switchAuthTab("login");
+  }
+
+  async function handleLoginSubmit(e) {
+    e.preventDefault();
+    els.loginError.classList.remove("show");
+
+    const username = els.loginUsername.value.trim();
+    const password = els.loginPassword.value;
+
+    if (!username) return showFieldError(els.loginError, t("auth.errUsernameRequired"));
+    if (!password) return showFieldError(els.loginError, t("auth.errPasswordRequired"));
+
+    els.loginSubmitBtn.disabled = true;
+    els.loginSubmitBtn.textContent = t("auth.loggingIn");
+
+    try {
+      const user = await Auth.login(username, password);
+      els.loginForm.reset();
+      toast(t("auth.welcomeBack", { username: user.username }));
+      await enterApp();
+    } catch (err) {
+      showFieldError(els.loginError, err.message);
+    } finally {
+      els.loginSubmitBtn.disabled = false;
+      els.loginSubmitBtn.textContent = t("auth.loginSubmit");
     }
   }
 
-  function saveOnboardName() {
-    const name = els.onboardNameInput.value.trim();
-    if (!name) return;
-    setUsername(name);
-    els.onboardBanner.classList.add("hidden");
+  async function handleRegisterSubmit(e) {
+    e.preventDefault();
+    els.registerError.classList.remove("show");
+
+    const username = els.registerUsername.value.trim();
+    const password = els.registerPassword.value;
+    const confirmPassword = els.registerPasswordConfirm.value;
+
+    if (!username) return showFieldError(els.registerError, t("auth.errUsernameRequired"));
+    if (!password) return showFieldError(els.registerError, t("auth.errPasswordRequired"));
+    if (password.length < 6) return showFieldError(els.registerError, t("auth.errPasswordTooShort"));
+    if (password !== confirmPassword) return showFieldError(els.registerError, t("auth.errPasswordMismatch"));
+
+    els.registerSubmitBtn.disabled = true;
+    els.registerSubmitBtn.textContent = t("auth.registering");
+
+    try {
+      const user = await Auth.register(username, password);
+      els.registerForm.reset();
+      toast(t("auth.welcomeNew", { username: user.username }));
+      await enterApp();
+    } catch (err) {
+      showFieldError(els.registerError, err.message);
+    } finally {
+      els.registerSubmitBtn.disabled = false;
+      els.registerSubmitBtn.textContent = t("auth.registerSubmit");
+    }
+  }
+
+  async function handleLogout() {
+    await Auth.logout();
+    closeSettingsModal();
+    allVideos = [];
+    currentVideoId = null;
+    currentFilter = "all";
+    els.searchInput.value = "";
+    toast(t("auth.loggedOut"));
+    showAuthGate();
+  }
+
+  function togglePasswordVisibility(btn) {
+    const target = document.getElementById(btn.dataset.target);
+    if (!target) return;
+    const showing = target.type === "text";
+    target.type = showing ? "password" : "text";
+    btn.innerHTML = showing
+      ? `<svg class="ico"><use href="#ic-eye"></use></svg>`
+      : `<svg class="ico"><use href="#ic-eye-off"></use></svg>`;
   }
 
   // ---------- Event bindings ----------
+
+  els.authTabs.addEventListener("click", (e) => {
+    const btn = e.target.closest(".auth-tab");
+    if (btn) switchAuthTab(btn.dataset.authtab);
+  });
+  els.loginForm.addEventListener("submit", handleLoginSubmit);
+  els.registerForm.addEventListener("submit", handleRegisterSubmit);
+  document.querySelectorAll(".auth-eye-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => togglePasswordVisibility(btn));
+  });
 
   els.searchInput.addEventListener("input", renderGrid);
   els.searchBtn.addEventListener("click", () => els.searchInput.focus());
@@ -765,38 +878,23 @@
   els.likeBtn.addEventListener("click", handleLike);
   els.commentForm.addEventListener("submit", handleCommentSubmit);
 
-  els.userChipBtn.addEventListener("click", () => {
-    const current = getUsername();
-    const name = prompt(t("nav.changeNamePrompt"), current || "");
-    if (name && name.trim()) setUsername(name.trim());
+  els.userChipBtn.addEventListener("click", () => openSettingsModal("account"));
+  els.settingsBtn.addEventListener("click", () => openSettingsModal("account"));
+  els.closeSettingsBtn.addEventListener("click", closeSettingsModal);
+  els.settingsModalOverlay.addEventListener("click", (e) => {
+    if (e.target === els.settingsModalOverlay) closeSettingsModal();
   });
-
-  els.themeBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const willOpen = els.themePanel.classList.contains("hidden");
-    closeAllDropdowns();
-    if (willOpen) els.themePanel.classList.remove("hidden");
+  els.settingsTabs.addEventListener("click", (e) => {
+    const btn = e.target.closest(".settings-tab");
+    if (btn) switchSettingsTab(btn.dataset.settingstab);
   });
-
-  els.langBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const willOpen = els.langPanel.classList.contains("hidden");
-    closeAllDropdowns();
-    if (willOpen) els.langPanel.classList.remove("hidden");
-  });
-
-  document.addEventListener("click", closeAllDropdowns);
-
-  els.onboardSaveBtn.addEventListener("click", saveOnboardName);
-  els.onboardNameInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") saveOnboardName();
-  });
+  els.settingsLogoutBtn.addEventListener("click", handleLogout);
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (!els.watchOverlay.classList.contains("hidden")) closeWatch();
       if (!els.uploadModalOverlay.classList.contains("hidden")) closeUploadModal();
-      closeAllDropdowns();
+      if (!els.settingsModalOverlay.classList.contains("hidden")) closeSettingsModal();
     }
   });
 
@@ -814,17 +912,25 @@
   });
 
   els.bottomUploadBtn.addEventListener("click", openUploadModal);
-  els.bottomThemeBtn.addEventListener("click", () => els.themeBtn.click());
-  els.bottomProfileBtn.addEventListener("click", () => setFilter("mine"));
+  els.bottomThemeBtn.addEventListener("click", () => openSettingsModal("design"));
+  els.bottomProfileBtn.addEventListener("click", () => openSettingsModal("account"));
 
   // ---------- Init ----------
 
-  applyTheme(getTheme());
-  applyI18n();
-  refreshUserChip();
-  renderThemePanel();
-  renderLangPanel();
-  els.dropzoneHint.textContent = t("upload.dropzoneHint", { max: MAX_TOTAL_MB });
-  maybeShowOnboarding();
-  loadVideos();
+  async function init() {
+    applyTheme(getTheme());
+    applyI18n();
+    renderSettingsDesignPanel();
+    renderSettingsLanguagePanel();
+    els.dropzoneHint.textContent = t("upload.dropzoneHint", { max: MAX_TOTAL_MB });
+
+    const user = await Auth.fetchMe();
+    if (user) {
+      await enterApp();
+    } else {
+      showAuthGate();
+    }
+  }
+
+  init();
 })();

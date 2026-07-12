@@ -211,28 +211,64 @@ textarea:focus-visible,
   flex-shrink: 0;
 }
 
+/* Brand mark: a fixed dark tile (like an app icon) holding the glitch "S" */
 .brand-mark {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: var(--accent-gradient);
+  background: #0d0d12;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent1) 45%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   transition: transform 0.4s var(--ease), box-shadow 0.3s ease;
 }
 
-.brand-mark .ico {
-  width: 17px;
-  height: 17px;
-  margin-left: 1px;
+.brand-mark.lg {
+  width: 68px;
+  height: 68px;
+  border-radius: 20px;
 }
 
 .brand:hover .brand-mark {
   transform: rotate(-8deg) scale(1.06);
+}
+
+/* TikTok-style duotone "glitch" wordmark: two offset colored copies behind
+   a solid white letter create the layered look, using the app's own accents. */
+.s-glitch {
+  position: relative;
+  display: inline-block;
+  font-family: "Poppins", sans-serif;
+  font-weight: 800;
+  line-height: 1;
+  font-size: 19px;
+  color: #fff;
+}
+
+.brand-mark.lg .s-glitch {
+  font-size: 38px;
+}
+
+.s-glitch::before,
+.s-glitch::after {
+  content: "S";
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+}
+
+.s-glitch::before {
+  color: var(--accent1);
+  transform: translate(-0.06em, -0.06em);
+}
+
+.s-glitch::after {
+  color: var(--accent2);
+  transform: translate(0.06em, 0.06em);
 }
 
 .brand-name {
@@ -1144,47 +1180,261 @@ main {
   }
 }
 
-/* ---------- Name onboarding banner ---------- */
-.onboard-banner {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  z-index: 150;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 16px 18px;
-  width: 260px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
-  animation: sheet-in 0.3s var(--ease);
+/* ---------- Auth gate ---------- */
+.auth-gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
 }
 
-.onboard-banner p {
-  margin: 0 0 10px;
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 38px 32px 32px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
+  animation: sheet-in 0.4s var(--ease);
+}
+
+.auth-logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.auth-tagline {
+  text-align: center;
+  color: var(--text-dim);
   font-size: 13px;
+  margin: 0 0 26px;
+}
+
+.auth-tabs {
+  display: flex;
+  background: var(--bg-elevated);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+}
+
+.auth-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 9px 0;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-dim);
+  transition: color 0.2s ease;
+}
+
+.auth-tab.active {
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent1) 35%, transparent);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  padding: 0 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.auth-field:focus-within {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent2) 18%, transparent);
+}
+
+.auth-field .ico {
   color: var(--text-dim);
 }
 
-.onboard-banner .row {
-  display: flex;
-  gap: 8px;
-}
-
-.onboard-banner input {
+.auth-field input {
   flex: 1;
   min-width: 0;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
+  border: none;
+  background: transparent;
   color: var(--text);
-  font-size: 13px;
+  font-size: 14px;
+  padding: 12px 0;
   outline: none;
-  transition: border-color 0.15s ease;
+  font-family: inherit;
 }
 
-.onboard-banner input:focus {
+.auth-eye-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  display: flex;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.auth-eye-toggle:hover {
+  color: var(--text);
+}
+
+.auth-hint {
+  margin: -6px 0 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.auth-submit {
+  justify-content: center;
+  width: 100%;
+  padding: 12px;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+/* ---------- Settings modal ---------- */
+.settings-modal {
+  max-width: 480px;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 22px;
+}
+
+.settings-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 9px 0;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.settings-tab.active {
+  background: var(--accent-gradient);
+  color: #fff;
+}
+
+.settings-panel {
+  min-height: 120px;
+}
+
+.settings-account-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  margin-bottom: 18px;
+}
+
+.settings-username {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.settings-meta {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.settings-logout-btn {
+  width: 100%;
+  justify-content: center;
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.settings-logout-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.theme-card {
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  cursor: pointer;
+  text-align: left;
+  background: var(--bg-elevated);
+  transition: border-color 0.15s ease, transform 0.15s var(--ease);
+}
+
+.theme-card:hover {
+  transform: translateY(-2px);
+}
+
+.theme-card.active {
   border-color: var(--accent2);
+}
+
+.theme-preview {
+  display: block;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+
+.theme-card-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.theme-card-label .check {
+  color: var(--accent1);
+  opacity: 0;
+}
+
+.theme-card-label .check .ico {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.6;
+}
+
+.theme-card.active .check {
+  opacity: 1;
+}
+
+#settingsLanguagePanel .dropdown-item {
+  font-size: 14px;
+  padding: 12px 12px;
 }
 
 /* ---------- Dropdowns (language / theme) ---------- */
@@ -1439,11 +1689,8 @@ main {
     gap: 22px 14px;
   }
 
-  .onboard-banner {
-    left: 14px;
-    right: 14px;
-    bottom: 90px;
-    width: auto;
+  .auth-card {
+    padding: 30px 22px 26px;
   }
 
   .bottom-nav {
