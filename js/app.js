@@ -19,12 +19,17 @@
   const MAX_TOTAL_BYTES = MAX_TOTAL_MB * 1024 * 1024;
   const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB pro Chunk (Rohdaten)
   const CHUNK_CONCURRENCY = 3;
+  const NEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // "Neu"-Filter: letzte 7 Tage
 
   const els = {
     videoGrid: document.getElementById("videoGrid"),
     emptyState: document.getElementById("emptyState"),
     videoCountLabel: document.getElementById("videoCountLabel"),
+    feedHeading: document.getElementById("feedHeading"),
     searchInput: document.getElementById("searchInput"),
+    searchBtn: document.getElementById("searchBtn"),
+    filterRow: document.getElementById("filterRow"),
+    mineFilterPill: document.getElementById("mineFilterPill"),
 
     userChipBtn: document.getElementById("userChipBtn"),
     userAvatar: document.getElementById("userAvatar"),
@@ -77,12 +82,20 @@
     onboardSaveBtn: document.getElementById("onboardSaveBtn"),
 
     toastStack: document.getElementById("toastStack"),
+
+    bottomNav: document.getElementById("bottomNav"),
+    bottomHomeBtn: document.getElementById("bottomHomeBtn"),
+    bottomSearchBtn: document.getElementById("bottomSearchBtn"),
+    bottomUploadBtn: document.getElementById("bottomUploadBtn"),
+    bottomThemeBtn: document.getElementById("bottomThemeBtn"),
+    bottomProfileBtn: document.getElementById("bottomProfileBtn"),
   };
 
   let allVideos = [];
   let currentVideoId = null;
   let selectedFile = null;
   let selectedThumbnailDataUrl = null;
+  let currentFilter = "all";
 
   // ---------- Helpers ----------
 
@@ -164,6 +177,10 @@
     els.langPanel.classList.add("hidden");
   }
 
+  function checkIcon() {
+    return `<span class="check"><svg class="ico"><use href="#ic-check"></use></svg></span>`;
+  }
+
   function renderThemePanel() {
     const current = getTheme();
     els.themePanel.innerHTML = "";
@@ -175,7 +192,7 @@
       btn.innerHTML = `
         <span class="theme-swatch" style="background:${gradient}"></span>
         <span>${escapeHtml(t(theme.labelKey))}</span>
-        <span class="check">✓</span>
+        ${checkIcon()}
       `;
       btn.addEventListener("click", () => {
         setTheme(theme.code);
@@ -196,7 +213,7 @@
       btn.innerHTML = `
         <span class="lang-flag">${lang.flag}</span>
         <span>${escapeHtml(lang.label)}</span>
-        <span class="check">✓</span>
+        ${checkIcon()}
       `;
       btn.addEventListener("click", () => {
         setLanguage(lang.code);
@@ -220,9 +237,66 @@
     }
   }
 
+  // ---------- Filters ----------
+
+  function setFilter(filter) {
+    if (filter === "mine" && !getUsername()) {
+      toast(t("nav.changeNamePrompt"));
+      els.onboardBanner.classList.remove("hidden");
+      els.onboardNameInput.focus();
+      return;
+    }
+    currentFilter = filter;
+    [...els.filterRow.querySelectorAll(".filter-pill")].forEach((pill) => {
+      pill.classList.toggle("active", pill.dataset.filter === filter);
+    });
+    [...els.bottomNav.querySelectorAll(".bottom-nav-item")].forEach((item) => {
+      item.classList.toggle("active", item.dataset.nav === "home" && filter === "all");
+    });
+    renderGrid();
+  }
+
+  function getFilteredVideos() {
+    let list = allVideos;
+    if (currentFilter === "new") {
+      const cutoff = Date.now() - NEW_WINDOW_MS;
+      list = list.filter((v) => new Date(v.createdAt).getTime() >= cutoff);
+    } else if (currentFilter === "popular") {
+      list = [...list].sort((a, b) => (b.likes || 0) - (a.likes || 0));
+    } else if (currentFilter === "mostViewed") {
+      list = [...list].sort((a, b) => (b.views || 0) - (a.views || 0));
+    } else if (currentFilter === "mine") {
+      const me = getUsername().toLowerCase();
+      list = list.filter((v) => v.username.toLowerCase() === me);
+    }
+    return list;
+  }
+
   // ---------- Feed ----------
 
+  function renderSkeletons(count = 10) {
+    els.emptyState.classList.add("hidden");
+    els.videoGrid.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < count; i++) {
+      const card = document.createElement("div");
+      card.innerHTML = `
+        <div class="skeleton-thumb"></div>
+        <div class="skeleton-meta">
+          <div class="skeleton-avatar"></div>
+          <div class="skeleton-lines">
+            <div class="skeleton-bar"></div>
+            <div class="skeleton-bar short"></div>
+          </div>
+        </div>
+      `;
+      frag.appendChild(card);
+    }
+    els.videoGrid.appendChild(frag);
+  }
+
   async function loadVideos() {
+    renderSkeletons();
     try {
       const res = await fetch(API.videos);
       if (!res.ok) throw new Error("load failed");
@@ -231,19 +305,19 @@
       renderGrid();
     } catch (err) {
       console.error(err);
+      els.videoGrid.innerHTML = "";
       toast(t("upload.loadError"), "error");
     }
   }
 
   function renderGrid() {
     const query = els.searchInput.value.trim().toLowerCase();
-    const filtered = query
-      ? allVideos.filter(
-          (v) =>
-            v.title.toLowerCase().includes(query) ||
-            v.username.toLowerCase().includes(query)
-        )
-      : allVideos;
+    let filtered = getFilteredVideos();
+    if (query) {
+      filtered = filtered.filter(
+        (v) => v.title.toLowerCase().includes(query) || v.username.toLowerCase().includes(query)
+      );
+    }
 
     els.videoCountLabel.textContent = allVideos.length ? tp("feed.count", allVideos.length) : "";
 
@@ -256,53 +330,43 @@
     els.emptyState.classList.add("hidden");
 
     const frag = document.createDocumentFragment();
-    filtered.forEach((video) => frag.appendChild(buildCard(video)));
+    filtered.forEach((video, i) => frag.appendChild(buildCard(video, i)));
     els.videoGrid.appendChild(frag);
   }
 
-  function buildCard(video) {
+  function buildCard(video, index = 0) {
     const card = document.createElement("div");
     card.className = "video-card";
     card.dataset.id = video.id;
+    card.style.animationDelay = `${Math.min(index, 14) * 35}ms`;
+    card.tabIndex = 0;
 
     const thumbHtml = video.hasThumbnail
       ? `<img class="thumb" loading="lazy" src="${API.thumbnail(video.id)}" alt="${escapeHtml(video.title)}" />`
-      : `<div class="thumb-fallback">
-           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-             <rect x="2" y="5" width="15" height="14" rx="2"></rect>
-             <path d="M17 9l5-3v12l-5-3"></path>
-           </svg>
-         </div>`;
+      : `<div class="thumb-fallback"><svg class="ico"><use href="#ic-video"></use></svg></div>`;
 
     card.innerHTML = `
-      ${thumbHtml}
-      <div class="card-overlay">
-        <div class="card-stats">
-          <span class="card-pill">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-              <circle cx="12" cy="12" r="3"></circle>
-            </svg>
-            ${formatCount(video.views)}
-          </span>
-          <span class="card-pill">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"></path>
-            </svg>
-            ${formatCount(video.likes)}
-          </span>
-        </div>
-        <div class="card-bottom">
+      <div class="thumb-wrap">
+        ${thumbHtml}
+        <div class="play-hint"><svg class="ico ico--filled"><use href="#ic-logo"></use></svg></div>
+      </div>
+      <div class="card-meta">
+        <span class="avatar">${initials(video.username)}</span>
+        <div class="card-meta-text">
           <p class="card-title">${escapeHtml(video.title)}</p>
-          <div class="card-user">
-            <span class="avatar" style="width:18px;height:18px;font-size:10px;">${initials(video.username)}</span>
-            ${escapeHtml(video.username)}
-          </div>
+          <p class="card-sub">${escapeHtml(video.username)}</p>
+          <p class="card-sub">${t("card.meta", { views: formatCount(video.views), time: timeAgo(video.createdAt) })}</p>
         </div>
       </div>
     `;
 
     card.addEventListener("click", () => openWatch(video.id));
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openWatch(video.id);
+      }
+    });
     return card;
   }
 
@@ -352,7 +416,7 @@
   }
 
   function renderComments(comments) {
-    els.commentCountLabel.textContent = t("watch.commentsCount", { n: comments.length });
+    els.commentCountLabel.innerHTML = `<svg class="ico"><use href="#ic-comment"></use></svg><span>${escapeHtml(t("watch.commentsCount", { n: comments.length }))}</span>`;
     els.commentList.innerHTML = "";
 
     if (!comments.length) {
@@ -665,6 +729,12 @@
   // ---------- Event bindings ----------
 
   els.searchInput.addEventListener("input", renderGrid);
+  els.searchBtn.addEventListener("click", () => els.searchInput.focus());
+
+  els.filterRow.addEventListener("click", (e) => {
+    const pill = e.target.closest(".filter-pill");
+    if (pill) setFilter(pill.dataset.filter);
+  });
 
   els.openUploadBtn.addEventListener("click", openUploadModal);
   els.closeUploadBtn.addEventListener("click", closeUploadModal);
@@ -729,6 +799,23 @@
       closeAllDropdowns();
     }
   });
+
+  // ---------- Bottom navigation (mobile) ----------
+
+  els.bottomHomeBtn.addEventListener("click", () => {
+    els.searchInput.value = "";
+    setFilter("all");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  els.bottomSearchBtn.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    els.searchInput.focus();
+  });
+
+  els.bottomUploadBtn.addEventListener("click", openUploadModal);
+  els.bottomThemeBtn.addEventListener("click", () => els.themeBtn.click());
+  els.bottomProfileBtn.addEventListener("click", () => setFilter("mine"));
 
   // ---------- Init ----------
 
