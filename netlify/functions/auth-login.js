@@ -30,7 +30,7 @@ export default async (req) => {
 
   return json(
     { user: publicUser(user) },
-    { headers: { "Set-Cookie": sessionCookieHeader(token) } }
+    { headers: { "Set-Cookie": sessionCookieHeader(token, req) } }
   );
 };
 

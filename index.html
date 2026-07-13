@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de" data-theme="neon">
+<html lang="de" data-theme="graphite">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,24 +8,28 @@
 <script>
   (function () {
     try {
-      var theme = localStorage.getItem("socialy_theme") || "neon";
+      var theme = localStorage.getItem("socialy_theme") || "graphite";
       document.documentElement.setAttribute("data-theme", theme);
       var lang = localStorage.getItem("socialy_lang");
       if (lang) document.documentElement.setAttribute("lang", lang);
     } catch (e) {}
   })();
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/css/style.css" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d0d12'/%3E%3Ctext x='16' y='23' font-family='Arial,Helvetica,sans-serif' font-weight='900' font-size='19' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%230a84ff'/%3E%3Cstop offset='100%25' stop-color='%235e5ce6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='%230b0b0e'/%3E%3Cpath d='M21.4 11.6c0-3.2-2.6-5.5-5.9-5.5S9.6 8.2 9.6 10.9c0 5.8 11.4 4.5 11.4 11 0 3.1-2.6 5.4-6 5.4s-6.1-2-6.2-5.4' fill='none' stroke='url(%23g)' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
 </head>
 <body>
 
 <!-- Shared icon sprite – every <use href="#ic-..."> below references this once-defined set -->
 <svg aria-hidden="true" style="position:absolute; width:0; height:0; overflow:hidden;">
   <defs>
+    <linearGradient id="brandGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" style="stop-color:var(--accent1)"></stop>
+      <stop offset="100%" style="stop-color:var(--accent2)"></stop>
+    </linearGradient>
+    <symbol id="ic-back" viewBox="0 0 24 24"><polyline points="15 5 8 12 15 19"></polyline></symbol>
+    <symbol id="ic-bolt" viewBox="0 0 24 24"><polygon points="13 2 4 14 11 14 10 22 20 10 13 10 13 2" fill="currentColor" stroke="none"></polygon></symbol>
+    <symbol id="ic-brand" viewBox="0 0 24 24"><path d="M16.6 8.1c0-2.5-2-4.3-4.6-4.3S7.4 5.4 7.4 7.5c0 4.6 9 3.5 9 8.6 0 2.5-2.1 4.3-4.7 4.3s-4.8-1.6-4.9-4.3"></path></symbol>
     <symbol id="ic-logo" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></symbol>
     <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></symbol>
     <symbol id="ic-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></symbol>
@@ -59,7 +63,7 @@
 <div class="auth-gate hidden" id="authGate">
   <div class="auth-card">
     <div class="auth-logo">
-      <span class="brand-mark lg"><span class="s-glitch" aria-hidden="true">S</span></span>
+      <span class="brand-mark lg"><svg class="ico brand-ico" aria-hidden="true"><use href="#ic-brand"></use></svg></span>
       <span class="brand-name" style="font-size:26px;font-weight:800;">Socialy</span>
     </div>
     <p class="auth-tagline" data-i18n="auth.tagline">Teile deine Videos mit der Welt.</p>
@@ -118,7 +122,7 @@
 <header class="app-header">
   <div class="header-row">
     <a class="brand" href="#" id="brandLink" aria-label="Socialy – zur Startseite">
-      <span class="brand-mark"><span class="s-glitch" aria-hidden="true">S</span></span>
+      <span class="brand-mark"><svg class="ico brand-ico" aria-hidden="true"><use href="#ic-brand"></use></svg></span>
       <span class="brand-name"><span class="brand-name-text">Socialy</span></span>
     </a>
 
@@ -145,7 +149,7 @@
       </button>
 
       <button class="user-chip" id="userChipBtn" data-i18n-title="nav.settings" title="Einstellungen">
-        <span class="avatar" id="userAvatar">?</span>
+        <span class="avatar" id="userAvatar"><img class="avatar-img" id="userAvatarImg" alt="" /><span class="avatar-fallback" id="userAvatarFallback">?</span></span>
         <span id="userNameLabel">Gast</span>
         <svg class="ico premium-badge-ico hidden" id="userChipPremiumBadge"><use href="#ic-crown"></use></svg>
       </button>
@@ -154,10 +158,15 @@
 
   <div class="filter-row" id="filterRow">
     <button type="button" class="filter-pill active" data-filter="all" data-i18n="filter.all">Alle</button>
+    <button type="button" class="filter-pill filter-pill--shorts" data-filter="shorts" id="shortsFilterPill">
+      <svg class="ico ico--filled"><use href="#ic-bolt"></use></svg>
+      <span data-i18n="filter.shorts">Shorts</span>
+    </button>
     <button type="button" class="filter-pill" data-filter="new" data-i18n="filter.new">Neu</button>
     <button type="button" class="filter-pill" data-filter="popular" data-i18n="filter.popular">Beliebt</button>
     <button type="button" class="filter-pill" data-filter="mostViewed" data-i18n="filter.mostViewed">Meistgesehen</button>
     <button type="button" class="filter-pill" data-filter="mine" id="mineFilterPill" data-i18n="filter.mine">Meine Videos</button>
+    <button type="button" class="filter-pill" data-filter="subscriptions" id="subscriptionsFilterPill" data-i18n="filter.subscriptions">Abonniert</button>
     <button type="button" class="filter-pill" data-filter="offline" id="offlineFilterPill" data-i18n="filter.offline">Offline</button>
   </div>
 </header>
@@ -180,7 +189,7 @@
 <footer class="app-footer">
   <div class="app-footer-inner">
     <div class="app-footer-brand">
-      <span class="brand-mark sm"><span class="s-glitch" aria-hidden="true">S</span></span>
+      <span class="brand-mark sm"><svg class="ico brand-ico" aria-hidden="true"><use href="#ic-brand"></use></svg></span>
       <div>
         <div class="app-footer-name">Socialy</div>
         <div class="app-footer-tagline" data-i18n="footer.tagline">Deine Videos. Deine Welt.</div>
@@ -216,11 +225,14 @@
     <div class="watch-info">
       <h2 class="watch-title" id="watchTitle"></h2>
       <div class="watch-author">
-        <span class="avatar" id="watchAvatar"></span>
-        <div>
-          <div class="name" id="watchUsername"></div>
-          <div class="date" id="watchMeta"></div>
-        </div>
+        <button type="button" class="watch-author-link" id="watchAuthorLink">
+          <span class="avatar" id="watchAvatar"><img class="avatar-img" id="watchAvatarImg" alt="" /><span class="avatar-fallback" id="watchAvatarFallback"></span></span>
+          <div>
+            <div class="name" id="watchUsername"></div>
+            <div class="date" id="watchMeta"></div>
+          </div>
+        </button>
+        <button type="button" class="btn btn-ghost watch-subscribe-btn hidden" id="watchSubscribeBtn"></button>
       </div>
       <p class="watch-description" id="watchDescription"></p>
       <div class="watch-actions">
@@ -324,12 +336,14 @@
 <div class="modal-overlay hidden" id="settingsModalOverlay">
   <div class="modal settings-modal">
     <div class="modal-head">
-      <h2 data-i18n="settings.title">Einstellungen</h2>
-      <button class="btn btn-icon" id="closeSettingsBtn">
-        <svg class="ico"><use href="#ic-close"></use></svg>
+      <button class="btn btn-icon page-back-btn" id="closeSettingsBtn" data-i18n-title="watch.close" title="Zurück">
+        <svg class="ico"><use href="#ic-back"></use></svg>
       </button>
+      <h2 data-i18n="settings.title">Einstellungen</h2>
+      <span class="page-head-spacer" aria-hidden="true"></span>
     </div>
 
+    <div class="settings-modal-body">
     <div class="settings-tabs" id="settingsTabs">
       <button type="button" class="settings-tab active" data-settingstab="account" data-i18n="settings.account">Konto</button>
       <button type="button" class="settings-tab" data-settingstab="coins" data-i18n="settings.coins">Coins</button>
@@ -339,7 +353,12 @@
 
     <div class="settings-panel" data-panel="account" id="settingsAccountPanel">
       <div class="settings-account-card">
-        <span class="avatar lg" id="settingsAvatar">?</span>
+        <button type="button" class="avatar lg avatar-edit" id="settingsAvatarBtn" data-i18n-title="settings.avatarChange" title="Profilbild ändern">
+          <img class="avatar-img" id="settingsAvatarImg" alt="" />
+          <span class="avatar-fallback" id="settingsAvatarFallback">?</span>
+          <span class="avatar-edit-overlay"><svg class="ico"><use href="#ic-image"></use></svg></span>
+        </button>
+        <input type="file" id="avatarFileInput" accept="image/*" hidden />
         <div>
           <div class="settings-username" id="settingsUsername"></div>
           <div class="settings-meta" id="settingsMemberSince"></div>
@@ -383,17 +402,20 @@
 
     <div class="settings-panel hidden" data-panel="design" id="settingsDesignPanel"></div>
     <div class="settings-panel hidden" data-panel="language" id="settingsLanguagePanel"></div>
+    </div>
   </div>
 </div>
 
-<!-- Studio overlay -->
-<div class="watch-overlay hidden" id="studioOverlay">
-  <button class="btn btn-icon watch-close" id="closeStudioBtn" data-i18n-title="watch.close" title="Schließen">
-    <svg class="ico"><use href="#ic-close"></use></svg>
-  </button>
-  <div class="studio-shell">
+<!-- Studio page -->
+<div class="watch-overlay page-overlay hidden" id="studioOverlay">
+  <div class="page-topbar">
+    <button class="btn btn-icon page-back-btn" id="closeStudioBtn" data-i18n-title="watch.close" title="Zurück">
+      <svg class="ico"><use href="#ic-back"></use></svg>
+    </button>
     <h2 class="studio-title" data-i18n="studio.title">Studio</h2>
-
+    <span class="page-head-spacer" aria-hidden="true"></span>
+  </div>
+  <div class="studio-shell">
     <div class="studio-stats-grid" id="studioStatsGrid"></div>
 
     <div class="studio-empty hidden" id="studioEmpty">
@@ -405,6 +427,35 @@
     <div id="studioVideoListWrap" class="hidden">
       <h3 class="studio-list-title" data-i18n="studio.videoListTitle">Deine Videos</h3>
       <div class="studio-video-list" id="studioVideoList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Channel page -->
+<div class="watch-overlay page-overlay hidden" id="channelOverlay">
+  <div class="page-topbar">
+    <button class="btn btn-icon page-back-btn" id="closeChannelBtn" data-i18n-title="watch.close" title="Zurück">
+      <svg class="ico"><use href="#ic-back"></use></svg>
+    </button>
+    <h2 class="studio-title" id="channelTopbarTitle" data-i18n="channel.title">Kanal</h2>
+    <span class="page-head-spacer" aria-hidden="true"></span>
+  </div>
+  <div class="studio-shell">
+    <div class="channel-header">
+      <span class="avatar xl" id="channelAvatar"><img class="avatar-img" id="channelAvatarImg" alt="" /><span class="avatar-fallback" id="channelAvatarFallback"></span></span>
+      <div class="channel-header-text">
+        <div class="channel-username" id="channelUsername"></div>
+        <div class="channel-meta" id="channelSubCount"></div>
+      </div>
+      <button type="button" class="btn btn-primary channel-subscribe-btn" id="channelSubscribeBtn"></button>
+    </div>
+
+    <div class="video-grid" id="channelVideoGrid"></div>
+
+    <div class="empty-state hidden" id="channelEmptyState">
+      <svg class="ico"><use href="#ic-video"></use></svg>
+      <h3 data-i18n="channel.emptyTitle">Noch keine Videos</h3>
+      <p data-i18n="channel.emptyDesc">Dieser Kanal hat noch nichts hochgeladen.</p>
     </div>
   </div>
 </div>

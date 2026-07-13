@@ -127,6 +127,12 @@
     return currentUser;
   }
 
+  function setAvatarVersion(version) {
+    if (!currentUser) return;
+    currentUser.avatarVersion = version;
+    cacheUser(currentUser);
+  }
+
   function isOfflineSession() {
     return isOffline;
   }
@@ -139,6 +145,7 @@
     claimDailyCoins,
     unlockPremium,
     getUser,
+    setAvatarVersion,
     isOfflineSession,
   };
 })();

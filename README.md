@@ -1,4 +1,4 @@
-# Socialy 🎬
+# Socialy
 
 Socialy ist eine kleine Video-Sharing-Plattform (im Stil von TikTok/YouTube):
 Nutzer erstellen ein Konto, melden sich an und können Videos mit Titel,
@@ -30,7 +30,13 @@ netlify/functions/auth-me.js         GET  /api/auth/me          → aktuelle Sit
 netlify/functions/auth-utils.js      Gemeinsame Hilfsfunktionen (Passwort-Hashing, Sessions, Cookies, Coin-Konstanten)
 netlify/functions/coins-claim.js     POST /api/coins/claim      → tägliche Coins abholen
 netlify/functions/premium-unlock.js  POST /api/premium/unlock   → Premium mit Coins freischalten
-netlify/functions/upload-chunk.js    POST /api/upload-chunk     → einzelnes Video-Chunk speichern
+netlify/functions/avatar-upload.js   POST /api/avatar-upload    → eigenes Profilbild hochladen
+netlify/functions/avatar.js          GET  /api/avatar/:username → Profilbild ausliefern
+netlify/functions/subscribe.js       POST /api/subscribe/:user  → Kanal abonnieren/entfolgen (toggle)
+netlify/functions/channel.js         GET  /api/channel/:user    → Kanal-Infos + eigener Abo-Status
+netlify/functions/my-subscriptions.js GET /api/subscriptions    → eigene abonnierte Kanäle
+netlify/functions/moderation-utils.js Gemeinsame Hilfsfunktion: KI-Inhaltsprüfung (Claude Vision, optional)
+netlify/functions/upload-chunk.js    POST /api/upload-chunk     → einzelnes Video-Chunk speichern (roh, binär)
 netlify/functions/upload-finalize.js POST /api/upload-finalize  → Chunks zusammenfügen + Metadaten speichern
 netlify/functions/videos.js          GET  /api/videos           → Liste aller Videos
 netlify/functions/video-file.js      GET  /api/video/:id        → Video-Datei ausliefern
@@ -130,11 +136,15 @@ Erkennung der Browsersprache beim ersten Besuch.
 
 ## Designs
 
-- **Neon** – dunkel, Pink/Violett (TikTok-Stil)
-- **Berg** – Tannengrün, Fels-Grau und warmes Amber
-- **Ozean** – tiefes Blau mit türkisen Akzenten
-- **Sonnenuntergang** – warmes Dunkelrot/Orange
-- **Hell** – helles Design mit warmem, luftigem Glass-Look
+Ein zurückhaltenderes, an native System-Designs (Apple) angelehntes
+Farbkonzept: neutrale Grundtöne mit jeweils genau einem prägnanten Akzentpaar
+statt eines durchgängig satten Neon-Hintergrunds.
+
+- **Graphite** – neutrales Anthrazit mit Blau/Indigo-Akzent (Standard)
+- **Sand** – warmes Anthrazit mit Amber/Terrakotta-Akzent
+- **Lagoon** – tiefes Petrol mit Cyan/Türkis-Akzent
+- **Bloom** – gedecktes Aubergine mit Pink/Violett-Akzent
+- **Daylight** – helles, luftiges Design mit klassischem Systemblau
 
 Jedes Design ist über CSS-Variablen definiert (`css/style.css`, Abschnitt
 "Themes") – weitere eigene Designs lassen sich ergänzen, indem man dort
@@ -143,11 +153,26 @@ in der `THEMES`-Liste einträgt.
 
 ## Logo
 
-Die Wortmarke ist ein eigenes "S"-Zeichen im TikTok-artigen Duotone/Glitch-
-Stil: zwei leicht versetzte, farbige Kopien des Buchstabens hinter einer
-weißen Hauptversion erzeugen den bekannten Schichteffekt – umgesetzt in
-reinem CSS (`.s-glitch` in `css/style.css`), automatisch farblich passend
-zum aktiven Design.
+Die Wortmarke ist ein eigenständiges Icon: ein durchgezogener, gradientfarbener
+"S"-Schriftzug (SVG, `#ic-brand` im Icon-Sprite) in einem App-Icon-artigen
+abgerundeten Quadrat – automatisch farblich passend zum aktiven Design, da
+der Verlauf `--accent1`/`--accent2` referenziert.
+
+## Profilbild
+
+Im Konto-Tab der Einstellungen kann jede:r Nutzer:in ein eigenes Profilbild
+hochladen (wird clientseitig auf 256×256 zugeschnitten). Es erscheint überall,
+wo bisher nur die Initialen zu sehen waren: Header, Kommentare, Video-Karten,
+Wiedergabe-Ansicht und Studio – mit automatischem Rückfall auf die Initialen,
+falls kein Bild gesetzt ist.
+
+## Einstellungen & Studio als echte Seiten
+
+Einstellungen und Studio sind über eigene URL-Fragmente erreichbar
+(`#/settings/<tab>`, `#/studio`) statt reiner Overlay-Dialoge: ein Reload
+bleibt auf derselben Ansicht, der Zurück-Button des Browsers verlässt die
+Seite, und beide sind als eigenständige, vollflächige Seiten mit
+Zurück-Pfeil im Kopfbereich gestaltet statt als zentrierte Dialoge.
 
 ## Datenschutz, Impressum & Nutzungsbedingungen
 
@@ -160,11 +185,62 @@ Betrieb mit echten Kontaktdaten ausfüllen.
 ## Größere Video-Uploads (Chunk-Upload)
 
 Serverless Functions haben ein Limit für die Größe einer einzelnen Anfrage
-(ca. 6 MB). Die Datei wird im Browser automatisch in **3-MB-Häppchen**
+(ca. 6 MB). Die Datei wird im Browser automatisch in **5-MB-Häppchen**
 zerlegt und hochgeladen (`/api/upload-chunk`); `/api/upload-finalize` fügt
 alle Chunks serverseitig wieder zusammen. Aktuelles Limit: **50 MB pro
 Video** (einstellbar über `MAX_TOTAL_BYTES` in
 `netlify/functions/upload-finalize.js` sowie `MAX_TOTAL_MB` in `js/app.js`).
+
+Die Chunks werden als **rohe Binärdaten** übertragen (nicht mehr als
+Base64-Text in JSON verpackt) und bis zu **sechs gleichzeitig** hochgeladen
+– das spart die ca. 33 % Größenzuwachs durch Base64 sowie die
+Kodierungszeit im Browser und macht Uploads spürbar schneller.
+
+## Kanäle & Abonnements
+
+Jeder Klick auf einen Namen oder ein Profilbild (Video-Karte,
+Wiedergabe-Ansicht) öffnet die **Kanal-Seite** dieser Person
+(`#/channel/<name>`) mit großem Profilbild, Abonnentenzahl und allen ihren
+Videos. Von dort – oder direkt aus der Wiedergabe-Ansicht – lässt sich der
+Kanal **abonnieren**; der Filter **"Abonniert"** im Feed zeigt dann nur
+Videos abonnierter Kanäle. Abonnements werden serverseitig als Kante
+zwischen zwei Konten gespeichert (`netlify/functions/subscribe.js`,
+`netlify/functions/channel.js`, `netlify/functions/my-subscriptions.js`);
+die Abonnentenzahl liegt direkt am Konto des Kanals.
+
+## Shorts
+
+Beim Hochladen wird automatisch die Videolänge erkannt. Videos mit **maximal
+1 Minute** gelten als **Short** und bekommen einen eigenen Button/Filter
+("⚡ Shorts") oben im Feed, außerdem ein Dauer-Abzeichen auf jeder
+Video-Karte (z. B. `0:45`). Längere Videos laufen ganz normal im
+allgemeinen Feed mit.
+
+## Automatische Inhaltsprüfung (Altersfreigabe 12+)
+
+Socialy ist für ein Publikum **ab 12 Jahren** gedacht. Beim Veröffentlichen
+wird das automatisch erzeugte Vorschaubild jedes Videos an ein
+KI-Sichtmodell (Claude, Anthropic) geschickt und auf grafische Gewalt oder
+sexuelle/explizite Inhalte geprüft, **bevor** irgendetwas gespeichert wird
+(`netlify/functions/moderation-utils.js`, eingebunden in
+`upload-finalize.js`). Wird ein Video als ungeeignet eingestuft, wird nichts
+gespeichert und der Upload mit einer klaren Fehlermeldung abgelehnt.
+
+**Wichtig – das ist eine Best-Effort-Prüfung, kein vollständiger Ersatz für
+menschliche Moderation:**
+
+- Geprüft wird nur das **eine Vorschaubild**, nicht das gesamte Video
+  Bild für Bild.
+- Die Prüfung läuft nur, wenn ein **`ANTHROPIC_API_KEY`** als
+  Umgebungsvariable in den Netlify-Site-Einstellungen hinterlegt ist
+  (Site settings → Environment variables). **Ohne Schlüssel wird die
+  Prüfung übersprungen** (fail-open) und jeder Upload geht durch, damit die
+  App auch ohne diese Konfiguration nutzbar bleibt – für einen produktiven
+  Betrieb mit echter Altersfreigabe sollte der Schlüssel unbedingt gesetzt
+  werden.
+- Optional lässt sich das Modell über die Umgebungsvariable
+  `MODERATION_MODEL` überschreiben (Standard: ein schnelles, günstiges
+  Vision-Modell).
 
 ## Deployment auf Netlify
 
@@ -178,15 +254,21 @@ Video** (einstellbar über `MAX_TOTAL_BYTES` in
    (die `netlify.toml` ist schon korrekt eingerichtet).
 5. **"Deploy site"** klicken – Netlify installiert automatisch
    `@netlify/blobs` und aktiviert Functions und Service Worker.
+6. Optional, aber empfohlen für die Altersfreigabe 12+: unter
+   **Site settings → Environment variables** einen `ANTHROPIC_API_KEY`
+   hinterlegen, um die automatische Inhaltsprüfung von Uploads zu
+   aktivieren (siehe Abschnitt "Automatische Inhaltsprüfung" oben).
 
 ### Variante B – Drag & Drop (schneller Test)
 
 1. Auf [app.netlify.com/drop](https://app.netlify.com/drop) gehen.
 2. Den **gesamten Projektordner** in das Upload-Feld ziehen.
 
-> Netlify Blobs benötigt keine zusätzliche Konfiguration. Die
-> Session-Cookies benötigen HTTPS (`Secure`-Flag) – bei jeder Netlify-Domain
-> automatisch gegeben.
+> Netlify Blobs benötigt keine zusätzliche Konfiguration. Das
+> Session-Cookie setzt das `Secure`-Flag automatisch nur dann, wenn die
+> Anfrage tatsächlich über HTTPS kam (bei jeder Netlify-Domain der Fall) –
+> so bleibt man auch bei lokalen HTTP-Testservern nach einem Reload
+> angemeldet, statt dass der Browser das Cookie stillschweigend verwirft.
 
 ### Lokal testen (optional)
 
@@ -197,19 +279,23 @@ npx netlify-cli dev
 
 ## Funktionen
 
-- 🔐 Echte Konten mit gehashtem Passwort und `HttpOnly`-Sitzungs-Cookie
-- 🥃 Durchgängiges Glass-Design mit Blur, Lichtkanten und Tiefe
-- 🪙 Tägliche Coins, Premium-Freischaltung, Fortschritts-Countdown
-- 📴 Videos für immer offline speichern (IndexedDB + Service Worker)
-- 📊 Studio-Statistik-Dashboard sobald ein Video hochgeladen wurde
-- 🖼️ Eigene Video-Thumbnails wählen oder hochladen
-- ⚙️ Einstellungen mit Konto, Coins, Design und Sprache
-- 📤 Videos hochladen bis 50 MB dank Chunk-Upload mit Fortschrittsanzeige
-- 🏠 Feed mit Suche und Filtern (Alle/Neu/Beliebt/Meistgesehen/Meine/Offline)
-- ▶️ Videoplayer mit Likes, Aufrufen und Kommentaren
-- 🌐 Vier Sprachen: Deutsch, Englisch, Französisch, Spanisch
-- 🎨 Fünf Designs: Neon, Berg, Ozean, Sonnenuntergang, Hell
-- 🅢 Eigenes Logo im TikTok-artigen Duotone-"S"-Stil
-- 📄 Footer mit Datenschutz, Impressum und Nutzungsbedingungen
-- 💾 Alles dauerhaft im Backend gespeichert (Netlify Blobs)
-- 📱 Responsives Design mit mobiler Bottom-Navigation
+- Echte Konten mit gehashtem Passwort und `HttpOnly`-Sitzungs-Cookie (bleibt nach Reload angemeldet)
+- Durchgängiges Glass-Design mit Blur, Lichtkanten und Tiefe
+- Eigenes Profilbild, überall sichtbar (Header, Kommentare, Karten, Studio)
+- Tägliche Coins, Premium-Freischaltung, Fortschritts-Countdown
+- Videos für immer offline speichern (IndexedDB + Service Worker)
+- Studio-Statistik-Dashboard als eigene Seite, sobald ein Video hochgeladen wurde
+- Eigene Video-Thumbnails wählen oder hochladen
+- Einstellungen als eigene, URL-adressierbare Seite mit Konto, Coins, Design und Sprache
+- Videos hochladen bis 50 MB dank Chunk-Upload mit Fortschrittsanzeige
+- Kanäle abonnieren, Kanal-Seiten mit allen Videos einer Person besuchen
+- Shorts-Filter für Videos bis 1 Minute, mit Dauer-Abzeichen auf jeder Karte
+- Automatische KI-Inhaltsprüfung der Uploads (Altersfreigabe 12+, optional per API-Key)
+- Feed mit Suche und Filtern (Alle/Neu/Beliebt/Meistgesehen/Meine/Abonniert/Offline)
+- Videoplayer mit Likes, Aufrufen und Kommentaren
+- Vier Sprachen: Deutsch, Englisch, Französisch, Spanisch
+- Fünf zurückhaltende, an native System-Designs angelehnte Farbwelten: Graphite, Sand, Lagoon, Bloom, Daylight
+- Eigenes Gradient-Logo als App-Icon-Kachel
+- Footer mit Datenschutz, Impressum und Nutzungsbedingungen
+- Alles dauerhaft im Backend gespeichert (Netlify Blobs)
+- Responsives Design mit mobiler Bottom-Navigation

@@ -1,9 +1,11 @@
 import { getStore } from "@netlify/blobs";
 import { json, errorResponse } from "./utils.js";
 import { getSessionUser } from "./auth-utils.js";
+import { moderateThumbnail } from "./moderation-utils.js";
 
 // Gesamtgröße nach dem Zusammenfügen aller Chunks.
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
+const SHORT_MAX_SECONDS = 60;
 
 export default async (req) => {
   if (req.method !== "POST") return errorResponse("Method not allowed", 405);
@@ -18,7 +20,7 @@ export default async (req) => {
     return errorResponse("Ungültiger Request-Body");
   }
 
-  const { id, totalChunks, title, description = "", videoType, thumbnailBase64 } = body || {};
+  const { id, totalChunks, title, description = "", videoType, thumbnailBase64, durationSeconds } = body || {};
 
   if (!id || typeof id !== "string") return errorResponse("Fehlende Upload-ID");
   if (!Number.isInteger(totalChunks) || totalChunks < 1) {
@@ -53,6 +55,32 @@ export default async (req) => {
 
   const videoBuffer = Buffer.concat(parts);
 
+  let thumbBuffer = null;
+  if (thumbnailBase64) {
+    try {
+      const raw = thumbnailBase64.includes(",") ? thumbnailBase64.split(",").pop() : thumbnailBase64;
+      const decoded = Buffer.from(raw, "base64");
+      if (decoded.byteLength > 0) thumbBuffer = decoded;
+    } catch {
+      thumbBuffer = null;
+    }
+  }
+
+  // Socialy is rated 12+: screen the thumbnail frame for graphic violence or
+  // sexual content before anything is persisted. Best-effort (single frame,
+  // skipped entirely if no moderation API key is configured — see
+  // moderation-utils.js).
+  const moderation = await moderateThumbnail(thumbBuffer ? thumbBuffer.toString("base64") : null);
+  if (moderation.checked && !moderation.safe) {
+    for (let i = 0; i < totalChunks; i++) {
+      await chunkStore.delete(`${id}:${i}`).catch(() => {});
+    }
+    return errorResponse(
+      "Dieses Video wurde von der automatischen Inhaltsprüfung abgelehnt (nicht geeignet für Socialy ab 12 Jahren).",
+      422
+    );
+  }
+
   const videoStore = getStore("video-files");
   await videoStore.set(id, videoBuffer, {
     metadata: { contentType: videoType || "video/mp4" },
@@ -63,23 +91,15 @@ export default async (req) => {
   }
 
   let hasThumbnail = false;
-  if (thumbnailBase64) {
-    try {
-      const raw = thumbnailBase64.includes(",")
-        ? thumbnailBase64.split(",").pop()
-        : thumbnailBase64;
-      const thumbBuffer = Buffer.from(raw, "base64");
-      if (thumbBuffer.byteLength > 0) {
-        const thumbStore = getStore("thumbnails");
-        await thumbStore.set(id, thumbBuffer, {
-          metadata: { contentType: "image/jpeg" },
-        });
-        hasThumbnail = true;
-      }
-    } catch {
-      hasThumbnail = false;
-    }
+  if (thumbBuffer) {
+    const thumbStore = getStore("thumbnails");
+    await thumbStore.set(id, thumbBuffer, {
+      metadata: { contentType: "image/jpeg" },
+    });
+    hasThumbnail = true;
   }
+
+  const duration = Math.max(0, Math.round(Number(durationSeconds) || 0));
 
   const metaStore = getStore("videos-meta");
   const meta = {
@@ -93,6 +113,8 @@ export default async (req) => {
     likedBy: [],
     comments: [],
     hasThumbnail,
+    durationSeconds: duration,
+    isShort: duration > 0 && duration <= SHORT_MAX_SECONDS,
   };
   await metaStore.setJSON(id, meta);
 

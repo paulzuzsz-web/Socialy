@@ -38,6 +38,7 @@ export default async (req) => {
     coins: SIGNUP_BONUS_COINS,
     isPremium: false,
     lastDailyClaim: null,
+    subscriberCount: 0,
   };
   await usersStore.setJSON(key, user);
 
@@ -45,7 +46,7 @@ export default async (req) => {
 
   return json(
     { user: publicUser(user) },
-    { status: 201, headers: { "Set-Cookie": sessionCookieHeader(token) } }
+    { status: 201, headers: { "Set-Cookie": sessionCookieHeader(token, req) } }
   );
 };
 

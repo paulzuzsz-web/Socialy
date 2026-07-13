@@ -15,12 +15,17 @@
     like: (id) => `/api/like/${id}`,
     view: (id) => `/api/view/${id}`,
     comment: (id) => `/api/comment/${id}`,
+    avatarUpload: "/api/avatar-upload",
+    avatar: (username) => `/api/avatar/${encodeURIComponent((username || "").toLowerCase())}`,
+    channel: (username) => `/api/channel/${encodeURIComponent((username || "").toLowerCase())}`,
+    subscribe: (username) => `/api/subscribe/${encodeURIComponent((username || "").toLowerCase())}`,
+    mySubscriptions: "/api/subscriptions",
   };
 
   const MAX_TOTAL_MB = 50;
   const MAX_TOTAL_BYTES = MAX_TOTAL_MB * 1024 * 1024;
-  const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB pro Chunk (Rohdaten)
-  const CHUNK_CONCURRENCY = 3;
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB pro Chunk, als rohe Binärdaten gesendet
+  const CHUNK_CONCURRENCY = 6;
   const NEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // "Neu"-Filter: letzte 7 Tage
 
   // Muss mit netlify/functions/auth-utils.js übereinstimmen.
@@ -59,6 +64,8 @@
 
     userChipBtn: document.getElementById("userChipBtn"),
     userAvatar: document.getElementById("userAvatar"),
+    userAvatarImg: document.getElementById("userAvatarImg"),
+    userAvatarFallback: document.getElementById("userAvatarFallback"),
     userNameLabel: document.getElementById("userNameLabel"),
     userChipPremiumBadge: document.getElementById("userChipPremiumBadge"),
     settingsBtn: document.getElementById("settingsBtn"),
@@ -66,7 +73,10 @@
     settingsModalOverlay: document.getElementById("settingsModalOverlay"),
     closeSettingsBtn: document.getElementById("closeSettingsBtn"),
     settingsTabs: document.getElementById("settingsTabs"),
-    settingsAvatar: document.getElementById("settingsAvatar"),
+    settingsAvatarBtn: document.getElementById("settingsAvatarBtn"),
+    settingsAvatarImg: document.getElementById("settingsAvatarImg"),
+    settingsAvatarFallback: document.getElementById("settingsAvatarFallback"),
+    avatarFileInput: document.getElementById("avatarFileInput"),
     settingsUsername: document.getElementById("settingsUsername"),
     settingsMemberSince: document.getElementById("settingsMemberSince"),
     settingsLogoutBtn: document.getElementById("settingsLogoutBtn"),
@@ -86,6 +96,18 @@
     studioEmpty: document.getElementById("studioEmpty"),
     studioVideoListWrap: document.getElementById("studioVideoListWrap"),
     studioVideoList: document.getElementById("studioVideoList"),
+
+    channelOverlay: document.getElementById("channelOverlay"),
+    closeChannelBtn: document.getElementById("closeChannelBtn"),
+    channelAvatar: document.getElementById("channelAvatar"),
+    channelAvatarImg: document.getElementById("channelAvatarImg"),
+    channelAvatarFallback: document.getElementById("channelAvatarFallback"),
+    channelUsername: document.getElementById("channelUsername"),
+    channelSubCount: document.getElementById("channelSubCount"),
+    channelSubscribeBtn: document.getElementById("channelSubscribeBtn"),
+    channelVideoGrid: document.getElementById("channelVideoGrid"),
+    channelEmptyState: document.getElementById("channelEmptyState"),
+    subscriptionsFilterPill: document.getElementById("subscriptionsFilterPill"),
 
     legalModalOverlay: document.getElementById("legalModalOverlay"),
     legalModalTitle: document.getElementById("legalModalTitle"),
@@ -123,6 +145,10 @@
     watchVideo: document.getElementById("watchVideo"),
     watchTitle: document.getElementById("watchTitle"),
     watchAvatar: document.getElementById("watchAvatar"),
+    watchAvatarImg: document.getElementById("watchAvatarImg"),
+    watchAvatarFallback: document.getElementById("watchAvatarFallback"),
+    watchAuthorLink: document.getElementById("watchAuthorLink"),
+    watchSubscribeBtn: document.getElementById("watchSubscribeBtn"),
     watchUsername: document.getElementById("watchUsername"),
     watchMeta: document.getElementById("watchMeta"),
     watchDescription: document.getElementById("watchDescription"),
@@ -150,14 +176,27 @@
   let currentVideoId = null;
   let selectedFile = null;
   let selectedThumbnailDataUrl = null;
+  let selectedDurationSeconds = 0;
+  const SHORT_MAX_SECONDS = 60;
   let currentFilter = "all";
+  let mySubscriptions = new Set();
+  let currentChannelUsername = null;
 
   // ---------- Helpers ----------
 
-  function toast(message, type = "info") {
+  function toast(message, type = "info", icon = null) {
     const el = document.createElement("div");
     el.className = "toast" + (type === "error" ? " error" : "");
-    el.textContent = message;
+    const iconId = icon || (type === "error" ? "ic-close" : "ic-check");
+    const iconEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    iconEl.setAttribute("class", "ico toast-ico");
+    const useEl = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    useEl.setAttribute("href", `#${iconId}`);
+    iconEl.appendChild(useEl);
+    el.appendChild(iconEl);
+    const textEl = document.createElement("span");
+    textEl.textContent = message;
+    el.appendChild(textEl);
     els.toastStack.appendChild(el);
     setTimeout(() => el.remove(), 3800);
   }
@@ -173,11 +212,31 @@
     return name.trim().slice(0, 1).toUpperCase();
   }
 
+  function avatarHtml(username, extraClass = "") {
+    return `<span class="avatar${extraClass ? " " + extraClass : ""}"><img class="avatar-img" src="${API.avatar(username)}" alt="" loading="lazy" /><span class="avatar-fallback">${escapeHtml(initials(username))}</span></span>`;
+  }
+
+  function setAvatarEl(wrapperEl, imgEl, fallbackEl, username, cacheBust) {
+    if (!wrapperEl || !imgEl || !fallbackEl) return;
+    wrapperEl.classList.remove("img-error");
+    fallbackEl.textContent = initials(username);
+    imgEl.src = API.avatar(username) + (cacheBust ? `?v=${cacheBust}` : "");
+  }
+
   function formatCount(n) {
     n = n || 0;
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(".0", "") + "M";
     if (n >= 1_000) return (n / 1_000).toFixed(1).replace(".0", "") + "K";
     return String(n);
+  }
+
+  function formatDuration(seconds) {
+    seconds = Math.max(0, Math.round(seconds || 0));
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${m}:${String(s).padStart(2, "0")}`;
   }
 
   function formatCountdown(ms) {
@@ -216,7 +275,7 @@
   function refreshUserChip() {
     const user = Auth.getUser();
     const name = user ? user.username : "";
-    els.userAvatar.textContent = initials(name || t("nav.guest"));
+    setAvatarEl(els.userAvatar, els.userAvatarImg, els.userAvatarFallback, name || t("nav.guest"), user?.avatarVersion);
     els.userNameLabel.textContent = name || t("nav.guest");
     els.userChipPremiumBadge.classList.toggle("hidden", !(user && user.isPremium));
   }
@@ -266,7 +325,7 @@
     els.claimCoinsBtn.disabled = true;
     try {
       const data = await Auth.claimDailyCoins();
-      toast(t("coins.claimSuccess", { amount: data.claimed }));
+      toast(t("coins.claimSuccess", { amount: data.claimed }), "info", "ic-coin");
     } catch (err) {
       toast(err.message || t("coins.claimError"), "error");
     } finally {
@@ -277,7 +336,7 @@
   async function handleUnlockPremium() {
     try {
       await Auth.unlockPremium();
-      toast(t("premium.unlockSuccess"));
+      toast(t("premium.unlockSuccess"), "info", "ic-crown");
       refreshCoinsUI();
       refreshUserChip();
     } catch (err) {
@@ -290,7 +349,7 @@
   function renderSettingsAccount() {
     const user = Auth.getUser();
     if (!user) return;
-    els.settingsAvatar.textContent = initials(user.username);
+    setAvatarEl(els.settingsAvatarBtn, els.settingsAvatarImg, els.settingsAvatarFallback, user.username, user.avatarVersion);
     els.settingsUsername.textContent = user.username;
     const date = user.createdAt ? new Date(user.createdAt).toLocaleDateString(getLanguage()) : "";
     els.settingsMemberSince.textContent = t("settings.memberSince", { date });
@@ -330,7 +389,7 @@
       btn.type = "button";
       btn.className = "dropdown-item" + (lang.code === current ? " active" : "");
       btn.innerHTML = `
-        <span class="lang-flag">${lang.flag}</span>
+        <span class="lang-code">${escapeHtml(lang.code.toUpperCase())}</span>
         <span>${escapeHtml(lang.label)}</span>
         ${checkIcon()}
       `;
@@ -342,6 +401,43 @@
     });
   }
 
+  // ---------- Routing ----------
+  // Settings and Studio are real pages: reachable via a URL hash, so a
+  // reload keeps you on the same page and the browser back button leaves it.
+
+  function navigateToPage(path) {
+    if (location.hash !== path) history.pushState({ socialyPage: path }, "", path);
+  }
+
+  // Updates the hash without creating a new history entry — used when
+  // switching tabs inside an already-open page, so the back button leaves
+  // the page in one step instead of stepping back through each tab.
+  function updatePageHash(path) {
+    if (location.hash !== path) history.replaceState({ socialyPage: path }, "", path);
+  }
+
+  function navigateAwayFromPage(prefix) {
+    if (location.hash.startsWith(prefix)) {
+      history.pushState({}, "", location.pathname + location.search);
+    }
+  }
+
+  function routeFromHash() {
+    if (els.appRoot.classList.contains("hidden")) return;
+    const hash = location.hash;
+    if (hash.startsWith("#/settings")) {
+      openSettingsModal(hash.split("/")[2] || "account", true);
+    } else if (hash.startsWith("#/studio")) {
+      openStudio(true);
+    } else if (hash.startsWith("#/channel/")) {
+      openChannel(decodeURIComponent(hash.split("/")[2] || ""), true);
+    } else {
+      if (!els.settingsModalOverlay.classList.contains("hidden")) closeSettingsModal(true);
+      if (!els.studioOverlay.classList.contains("hidden")) closeStudio(true);
+      if (!els.channelOverlay.classList.contains("hidden")) closeChannel(true);
+    }
+  }
+
   function switchSettingsTab(tabName) {
     [...els.settingsTabs.querySelectorAll(".settings-tab")].forEach((b) =>
       b.classList.toggle("active", b.dataset.settingstab === tabName)
@@ -351,15 +447,19 @@
     });
   }
 
-  function openSettingsModal(tabName = "account") {
+  function openSettingsModal(tabName = "account", fromRoute = false) {
+    if (!fromRoute) navigateToPage(`#/settings/${tabName}`);
     renderSettingsAccount();
     refreshCoinsUI();
     switchSettingsTab(tabName);
     els.settingsModalOverlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
   }
 
-  function closeSettingsModal() {
+  function closeSettingsModal(fromRoute = false) {
+    if (!fromRoute) navigateAwayFromPage("#/settings");
     els.settingsModalOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
   }
 
   function refreshAllText() {
@@ -450,16 +550,120 @@
     els.studioVideoList.appendChild(frag);
   }
 
-  function openStudio() {
-    closeSettingsModal();
+  function openStudio(fromRoute = false) {
+    closeSettingsModal(true);
+    if (!fromRoute) navigateToPage("#/studio");
     renderStudio();
     els.studioOverlay.classList.remove("hidden");
     document.body.style.overflow = "hidden";
   }
 
-  function closeStudio() {
+  function closeStudio(fromRoute = false) {
+    if (!fromRoute) navigateAwayFromPage("#/studio");
     els.studioOverlay.classList.add("hidden");
     document.body.style.overflow = "";
+  }
+
+  // ---------- Channels & subscriptions ----------
+
+  async function loadMySubscriptions() {
+    if (!Auth.getUser()) {
+      mySubscriptions = new Set();
+      return;
+    }
+    try {
+      const res = await fetch(API.mySubscriptions);
+      if (!res.ok) return;
+      const data = await res.json();
+      mySubscriptions = new Set((data.channels || []).map((c) => c.toLowerCase()));
+    } catch {
+      /* keep previous state if offline */
+    }
+  }
+
+  function renderSubscribeButton(btn, isSelf, isSubscribed) {
+    btn.classList.toggle("hidden", isSelf);
+    btn.classList.toggle("is-subscribed", isSubscribed);
+    btn.innerHTML = isSubscribed
+      ? `<svg class="ico"><use href="#ic-check"></use></svg><span>${escapeHtml(t("channel.subscribed"))}</span>`
+      : `<svg class="ico"><use href="#ic-plus"></use></svg><span>${escapeHtml(t("channel.subscribe"))}</span>`;
+  }
+
+  function setupWatchSubscribeButton(username) {
+    const me = getUsername().toLowerCase();
+    const isSelf = !me || username.toLowerCase() === me;
+    renderSubscribeButton(els.watchSubscribeBtn, isSelf, mySubscriptions.has(username.toLowerCase()));
+    els.watchSubscribeBtn.onclick = () => handleSubscribeToggle(username, els.watchSubscribeBtn);
+  }
+
+  async function handleSubscribeToggle(username, btn) {
+    if (!Auth.getUser()) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(API.subscribe(username), { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || t("channel.subscribeError"));
+      if (data.subscribed) mySubscriptions.add(username.toLowerCase());
+      else mySubscriptions.delete(username.toLowerCase());
+      renderSubscribeButton(btn, false, data.subscribed);
+      if (currentChannelUsername && currentChannelUsername.toLowerCase() === username.toLowerCase()) {
+        els.channelSubCount.textContent = tp("channel.subscriberCount", data.channel.subscriberCount);
+      }
+    } catch (err) {
+      toast(err.message || t("channel.subscribeError"), "error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function openChannel(username, fromRoute = false) {
+    if (!username) return;
+    if (!fromRoute) navigateToPage(`#/channel/${encodeURIComponent(username.toLowerCase())}`);
+    closeWatch();
+    closeSettingsModal(true);
+    closeStudio(true);
+    currentChannelUsername = username;
+
+    els.channelUsername.textContent = username;
+    els.channelSubCount.textContent = "";
+    setAvatarEl(els.channelAvatar, els.channelAvatarImg, els.channelAvatarFallback, username);
+    els.channelSubscribeBtn.classList.add("hidden");
+    els.channelVideoGrid.innerHTML = "";
+    els.channelEmptyState.classList.add("hidden");
+    els.channelOverlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+
+    try {
+      const res = await fetch(API.channel(username));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || t("channel.loadError"));
+
+      setAvatarEl(els.channelAvatar, els.channelAvatarImg, els.channelAvatarFallback, data.channel.username, data.channel.avatarVersion);
+      els.channelUsername.textContent = data.channel.username;
+      els.channelSubCount.textContent = tp("channel.subscriberCount", data.channel.subscriberCount);
+      renderSubscribeButton(els.channelSubscribeBtn, data.isSelf, data.isSubscribed);
+      els.channelSubscribeBtn.onclick = () => handleSubscribeToggle(data.channel.username, els.channelSubscribeBtn);
+    } catch (err) {
+      toast(err.message || t("channel.loadError"), "error");
+    }
+
+    const channelVideos = allVideos.filter((v) => v.username.toLowerCase() === username.toLowerCase());
+    if (!channelVideos.length) {
+      els.channelEmptyState.classList.remove("hidden");
+    } else {
+      const frag = document.createDocumentFragment();
+      channelVideos
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .forEach((video, i) => frag.appendChild(buildCard(video, i)));
+      els.channelVideoGrid.appendChild(frag);
+    }
+  }
+
+  function closeChannel(fromRoute = false) {
+    if (!fromRoute) navigateAwayFromPage("#/channel");
+    els.channelOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
+    currentChannelUsername = null;
   }
 
   // ---------- Legal modal ----------
@@ -505,6 +709,10 @@
       list = [...list].sort((a, b) => (b.views || 0) - (a.views || 0));
     } else if (currentFilter === "mine") {
       list = getMyVideos();
+    } else if (currentFilter === "subscriptions") {
+      list = list.filter((v) => mySubscriptions.has(v.username.toLowerCase()));
+    } else if (currentFilter === "shorts") {
+      list = list.filter((v) => v.isShort);
     }
     return list;
   }
@@ -553,8 +761,16 @@
       return;
     }
 
-    els.emptyStateTitle.textContent = t("empty.title");
-    els.emptyStateDesc.textContent = t("empty.desc");
+    if (currentFilter === "subscriptions") {
+      els.emptyStateTitle.textContent = t("channel.subsEmptyTitle");
+      els.emptyStateDesc.textContent = t("channel.subsEmptyDesc");
+    } else if (currentFilter === "shorts") {
+      els.emptyStateTitle.textContent = t("shorts.emptyTitle");
+      els.emptyStateDesc.textContent = t("shorts.emptyDesc");
+    } else {
+      els.emptyStateTitle.textContent = t("empty.title");
+      els.emptyStateDesc.textContent = t("empty.desc");
+    }
 
     const query = els.searchInput.value.trim().toLowerCase();
     let filtered = getFilteredVideos();
@@ -590,21 +806,32 @@
       ? `<img class="thumb" loading="lazy" src="${API.thumbnail(video.id)}" alt="${escapeHtml(video.title)}" />`
       : `<div class="thumb-fallback"><svg class="ico"><use href="#ic-video"></use></svg></div>`;
 
+    const durationBadge = video.durationSeconds
+      ? `<span class="duration-badge${video.isShort ? " duration-badge--short" : ""}">${escapeHtml(formatDuration(video.durationSeconds))}</span>`
+      : "";
+
     card.innerHTML = `
       <div class="thumb-wrap">
         ${thumbHtml}
+        ${durationBadge}
         <div class="play-hint"><svg class="ico ico--filled"><use href="#ic-logo"></use></svg></div>
       </div>
       <div class="card-meta">
-        <span class="avatar">${initials(video.username)}</span>
+        <span class="card-channel-link" data-channel="${escapeHtml(video.username)}">${avatarHtml(video.username)}</span>
         <div class="card-meta-text">
           <p class="card-title">${escapeHtml(video.title)}</p>
-          <p class="card-sub">${escapeHtml(video.username)}</p>
+          <p class="card-sub card-channel-link" data-channel="${escapeHtml(video.username)}">${escapeHtml(video.username)}</p>
           <p class="card-sub">${t("card.meta", { views: formatCount(video.views), time: timeAgo(video.createdAt) })}</p>
         </div>
       </div>
     `;
 
+    card.querySelectorAll("[data-channel]").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openChannel(video.username);
+      });
+    });
     card.addEventListener("click", () => openWatch(video.id));
     card.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -653,14 +880,18 @@
     const thumbHtml = video.thumbnailBlob
       ? `<img class="thumb" src="${URL.createObjectURL(video.thumbnailBlob)}" alt="${escapeHtml(video.title)}" />`
       : `<div class="thumb-fallback"><svg class="ico"><use href="#ic-video"></use></svg></div>`;
+    const durationBadge = video.durationSeconds
+      ? `<span class="duration-badge${video.isShort ? " duration-badge--short" : ""}">${escapeHtml(formatDuration(video.durationSeconds))}</span>`
+      : "";
 
     card.innerHTML = `
       <div class="thumb-wrap">
         ${thumbHtml}
+        ${durationBadge}
         <div class="play-hint"><svg class="ico ico--filled"><use href="#ic-logo"></use></svg></div>
       </div>
       <div class="card-meta">
-        <span class="avatar">${initials(video.username)}</span>
+        ${avatarHtml(video.username)}
         <div class="card-meta-text">
           <p class="card-title">${escapeHtml(video.title)}</p>
           <p class="card-sub">${escapeHtml(video.username)}</p>
@@ -736,7 +967,7 @@
         blob
       );
 
-      toast(t("offline.saveSuccess"));
+      toast(t("offline.saveSuccess"), "info", "ic-download");
       await refreshOfflineButton(id);
       if (currentFilter === "offline") renderGrid();
     } catch (err) {
@@ -754,8 +985,10 @@
     currentVideoId = id;
     els.watchVideo.src = URL.createObjectURL(video.blob);
     els.watchTitle.textContent = video.title;
-    els.watchAvatar.textContent = initials(video.username);
+    setAvatarEl(els.watchAvatar, els.watchAvatarImg, els.watchAvatarFallback, video.username);
     els.watchUsername.textContent = video.username;
+    els.watchAuthorLink.onclick = () => openChannel(video.username);
+    setupWatchSubscribeButton(video.username);
     els.watchMeta.textContent = t("offline.saved");
     els.watchDescription.textContent = video.description || "";
     els.likeCount.textContent = "–";
@@ -777,8 +1010,10 @@
     currentVideoId = id;
     els.watchVideo.src = API.video(id);
     els.watchTitle.textContent = video.title;
-    els.watchAvatar.textContent = initials(video.username);
+    setAvatarEl(els.watchAvatar, els.watchAvatarImg, els.watchAvatarFallback, video.username);
     els.watchUsername.textContent = video.username;
+    els.watchAuthorLink.onclick = () => openChannel(video.username);
+    setupWatchSubscribeButton(video.username);
     els.watchMeta.textContent = timeAgo(video.createdAt);
     els.watchDescription.textContent = video.description || "";
     els.likeCount.textContent = formatCount(video.likes);
@@ -830,7 +1065,7 @@
       const item = document.createElement("div");
       item.className = "comment-item";
       item.innerHTML = `
-        <span class="avatar" style="width:30px;height:30px;font-size:13px;">${initials(c.author)}</span>
+        ${avatarHtml(c.author, "comment-avatar")}
         <div class="comment-body">
           <span class="comment-author">${escapeHtml(c.author)}</span>${escapeHtml(c.text)}
           <span class="comment-time">${timeAgo(c.createdAt)}</span>
@@ -983,6 +1218,7 @@
     els.uploadError.classList.remove("show");
     selectedFile = file;
     selectedThumbnailDataUrl = null;
+    selectedDurationSeconds = 0;
     els.dropzoneLabel.textContent = file.name;
 
     const objectUrl = URL.createObjectURL(file);
@@ -994,6 +1230,7 @@
       () => {
         try {
           const duration = els.videoPreview.duration || 1;
+          selectedDurationSeconds = duration;
           els.thumbScrubRange.max = String(Math.max(1, Math.floor(duration * 10)));
           els.thumbScrubRange.value = "0";
           els.videoPreview.currentTime = Math.min(0.5, duration / 4);
@@ -1008,28 +1245,23 @@
     els.videoPreview.addEventListener("seeked", captureThumbnailFrame);
   }
 
-  function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result).split(",").pop());
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
   async function uploadFileInChunks(file, uploadId, onProgress) {
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
     let completed = 0;
 
+    // Chunks go over the wire as raw binary (no base64/JSON wrapping), which
+    // avoids the ~33% base64 size inflation and the FileReader encoding step
+    // entirely — a meaningful speedup, especially combined with uploading
+    // several chunks in parallel.
     async function uploadOne(index) {
       const start = index * CHUNK_SIZE;
       const end = Math.min(file.size, start + CHUNK_SIZE);
-      const chunkBase64 = await blobToBase64(file.slice(start, end));
+      const chunk = file.slice(start, end);
 
-      const res = await fetch(API.uploadChunk, {
+      const res = await fetch(`${API.uploadChunk}?id=${uploadId}&index=${index}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: uploadId, index, chunkBase64 }),
+        headers: { "Content-Type": "application/octet-stream" },
+        body: chunk,
       });
 
       if (!res.ok) {
@@ -1089,6 +1321,7 @@
           description,
           videoType: selectedFile.type || "video/mp4",
           thumbnailBase64: selectedThumbnailDataUrl,
+          durationSeconds: Math.round(selectedDurationSeconds) || 0,
         }),
       });
 
@@ -1137,8 +1370,10 @@
       toast(t("offline.sessionRestored"));
       setFilter("offline");
     } else {
-      await loadVideos();
+      await Promise.all([loadVideos(), loadMySubscriptions()]);
     }
+
+    routeFromHash();
   }
 
   function showAuthGate() {
@@ -1208,6 +1443,7 @@
     allVideos = [];
     currentVideoId = null;
     currentFilter = "all";
+    mySubscriptions = new Set();
     els.searchInput.value = "";
     toast(t("auth.loggedOut"));
     showAuthGate();
@@ -1284,6 +1520,65 @@
     reader.readAsDataURL(file);
   });
 
+  function resizeImageForAvatar(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const size = 256;
+          const minSide = Math.min(img.width, img.height);
+          const sx = (img.width - minSide) / 2;
+          const sy = (img.height - minSide) / 2;
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          canvas.getContext("2d").drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+        };
+        img.onerror = () => reject(new Error("image decode failed"));
+        img.src = String(reader.result);
+      };
+      reader.onerror = () => reject(new Error("file read failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  els.settingsAvatarBtn.addEventListener("click", () => els.avatarFileInput.click());
+  els.avatarFileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    try {
+      const dataUrl = await resizeImageForAvatar(file);
+      const res = await fetch(API.avatarUpload, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: dataUrl, contentType: "image/jpeg" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || t("settings.avatarError"));
+      Auth.setAvatarVersion(data.avatarVersion);
+      renderSettingsAccount();
+      refreshUserChip();
+      toast(t("settings.avatarSuccess"), "info", "ic-image");
+    } catch (err) {
+      toast(err.message || t("settings.avatarError"), "error");
+    }
+  });
+
+  // Avatar <img> tags 404 whenever a user has no profile picture yet; fall
+  // back to the initials badge underneath instead of showing a broken image.
+  document.addEventListener(
+    "error",
+    (e) => {
+      if (e.target?.classList?.contains("avatar-img")) {
+        e.target.closest(".avatar")?.classList.add("img-error");
+      }
+    },
+    true
+  );
+
   els.closeWatchBtn.addEventListener("click", closeWatch);
   els.watchOverlay.addEventListener("click", (e) => {
     if (e.target === els.watchOverlay) closeWatch();
@@ -1295,7 +1590,7 @@
   els.userChipBtn.addEventListener("click", () => openSettingsModal("account"));
   els.settingsBtn.addEventListener("click", () => openSettingsModal("account"));
   els.coinChipBtn.addEventListener("click", () => openSettingsModal("coins"));
-  els.closeSettingsBtn.addEventListener("click", closeSettingsModal);
+  els.closeSettingsBtn.addEventListener("click", () => closeSettingsModal());
   els.settingsModalOverlay.addEventListener("click", (e) => {
     if (e.target === els.settingsModalOverlay) closeSettingsModal();
   });
@@ -1303,17 +1598,23 @@
     const btn = e.target.closest(".settings-tab");
     if (btn) {
       switchSettingsTab(btn.dataset.settingstab);
+      updatePageHash(`#/settings/${btn.dataset.settingstab}`);
       refreshCoinsUI();
     }
   });
   els.settingsLogoutBtn.addEventListener("click", handleLogout);
   els.claimCoinsBtn.addEventListener("click", handleClaimCoins);
   els.unlockPremiumBtn.addEventListener("click", handleUnlockPremium);
-  els.openStudioBtn.addEventListener("click", openStudio);
-  els.closeStudioBtn.addEventListener("click", closeStudio);
+  els.openStudioBtn.addEventListener("click", () => openStudio());
+  els.closeStudioBtn.addEventListener("click", () => closeStudio());
   els.studioOverlay.addEventListener("click", (e) => {
     if (e.target === els.studioOverlay) closeStudio();
   });
+  els.closeChannelBtn.addEventListener("click", () => closeChannel());
+  els.channelOverlay.addEventListener("click", (e) => {
+    if (e.target === els.channelOverlay) closeChannel();
+  });
+  window.addEventListener("popstate", routeFromHash);
 
   document.querySelectorAll(".app-footer-link").forEach((btn) => {
     btn.addEventListener("click", () => openLegalModal(btn.dataset.legal));
@@ -1329,6 +1630,7 @@
       if (!els.uploadModalOverlay.classList.contains("hidden")) closeUploadModal();
       if (!els.settingsModalOverlay.classList.contains("hidden")) closeSettingsModal();
       if (!els.studioOverlay.classList.contains("hidden")) closeStudio();
+      if (!els.channelOverlay.classList.contains("hidden")) closeChannel();
       if (!els.legalModalOverlay.classList.contains("hidden")) closeLegalModal();
     }
   });

@@ -37,14 +37,30 @@ function parseCookies(req) {
   return cookies;
 }
 
-export function sessionCookieHeader(token, maxAge = SESSION_MAX_AGE) {
-  return [`${SESSION_COOKIE}=${token}`, "Path=/", "HttpOnly", "Secure", "SameSite=Lax", `Max-Age=${maxAge}`].join(
-    "; "
-  );
+// Secure cookies are silently dropped by browsers on plain HTTP (e.g. local
+// dev servers), which would otherwise make every login look like it "doesn't
+// persist" on reload. Only require Secure when the request actually came in
+// over HTTPS.
+function isSecureRequest(req) {
+  const proto = req?.headers?.get?.("x-forwarded-proto");
+  if (proto) return proto === "https";
+  try {
+    return new URL(req.url).protocol === "https:";
+  } catch {
+    return true;
+  }
 }
 
-export function clearSessionCookieHeader() {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+export function sessionCookieHeader(token, req, maxAge = SESSION_MAX_AGE) {
+  const parts = [`${SESSION_COOKIE}=${token}`, "Path=/", "HttpOnly", "SameSite=Lax", `Max-Age=${maxAge}`];
+  if (isSecureRequest(req)) parts.splice(2, 0, "Secure");
+  return parts.join("; ");
+}
+
+export function clearSessionCookieHeader(req) {
+  const parts = [`${SESSION_COOKIE}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (isSecureRequest(req)) parts.splice(2, 0, "Secure");
+  return parts.join("; ");
 }
 
 export async function createSession(usernameKey) {
@@ -62,6 +78,8 @@ export function publicUser(user) {
     coins: user.coins || 0,
     isPremium: !!user.isPremium,
     lastDailyClaim: user.lastDailyClaim || null,
+    avatarVersion: user.avatarVersion || 0,
+    subscriberCount: user.subscriberCount || 0,
   };
 }
 

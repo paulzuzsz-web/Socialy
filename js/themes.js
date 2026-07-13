@@ -2,16 +2,16 @@
   "use strict";
 
   const THEMES = [
-    { code: "neon", labelKey: "theme.neon", swatch: ["#ff2d78", "#7c3aed"] },
-    { code: "berg", labelKey: "theme.berg", swatch: ["#d97742", "#3f7d5c"] },
-    { code: "ocean", labelKey: "theme.ocean", swatch: ["#22d3ee", "#2563eb"] },
-    { code: "sunset", labelKey: "theme.sunset", swatch: ["#fb923c", "#e11d48"] },
-    { code: "light", labelKey: "theme.light", swatch: ["#ff2d78", "#7c3aed"] },
+    { code: "graphite", labelKey: "theme.graphite", swatch: ["#0a84ff", "#5e5ce6"] },
+    { code: "sand", labelKey: "theme.sand", swatch: ["#ff9f0a", "#d97a3d"] },
+    { code: "lagoon", labelKey: "theme.lagoon", swatch: ["#64d2ff", "#00c7be"] },
+    { code: "bloom", labelKey: "theme.bloom", swatch: ["#ff375f", "#bf5af2"] },
+    { code: "daylight", labelKey: "theme.daylight", swatch: ["#007aff", "#5856d6"] },
   ];
 
   function getTheme() {
     const saved = localStorage.getItem("socialy_theme");
-    return THEMES.some((th) => th.code === saved) ? saved : "neon";
+    return THEMES.some((th) => th.code === saved) ? saved : "graphite";
   }
 
   function applyTheme(theme) {
