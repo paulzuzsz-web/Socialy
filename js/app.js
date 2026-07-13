@@ -17,12 +17,15 @@
     comment: (id) => `/api/comment/${id}`,
     avatarUpload: "/api/avatar-upload",
     avatar: (username) => `/api/avatar/${encodeURIComponent((username || "").toLowerCase())}`,
+    channel: (username) => `/api/channel/${encodeURIComponent((username || "").toLowerCase())}`,
+    subscribe: (username) => `/api/subscribe/${encodeURIComponent((username || "").toLowerCase())}`,
+    mySubscriptions: "/api/subscriptions",
   };
 
   const MAX_TOTAL_MB = 50;
   const MAX_TOTAL_BYTES = MAX_TOTAL_MB * 1024 * 1024;
-  const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB pro Chunk (Rohdaten)
-  const CHUNK_CONCURRENCY = 3;
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB pro Chunk, als rohe Binärdaten gesendet
+  const CHUNK_CONCURRENCY = 6;
   const NEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // "Neu"-Filter: letzte 7 Tage
 
   // Muss mit netlify/functions/auth-utils.js übereinstimmen.
@@ -94,6 +97,18 @@
     studioVideoListWrap: document.getElementById("studioVideoListWrap"),
     studioVideoList: document.getElementById("studioVideoList"),
 
+    channelOverlay: document.getElementById("channelOverlay"),
+    closeChannelBtn: document.getElementById("closeChannelBtn"),
+    channelAvatar: document.getElementById("channelAvatar"),
+    channelAvatarImg: document.getElementById("channelAvatarImg"),
+    channelAvatarFallback: document.getElementById("channelAvatarFallback"),
+    channelUsername: document.getElementById("channelUsername"),
+    channelSubCount: document.getElementById("channelSubCount"),
+    channelSubscribeBtn: document.getElementById("channelSubscribeBtn"),
+    channelVideoGrid: document.getElementById("channelVideoGrid"),
+    channelEmptyState: document.getElementById("channelEmptyState"),
+    subscriptionsFilterPill: document.getElementById("subscriptionsFilterPill"),
+
     legalModalOverlay: document.getElementById("legalModalOverlay"),
     legalModalTitle: document.getElementById("legalModalTitle"),
     legalModalBody: document.getElementById("legalModalBody"),
@@ -132,6 +147,8 @@
     watchAvatar: document.getElementById("watchAvatar"),
     watchAvatarImg: document.getElementById("watchAvatarImg"),
     watchAvatarFallback: document.getElementById("watchAvatarFallback"),
+    watchAuthorLink: document.getElementById("watchAuthorLink"),
+    watchSubscribeBtn: document.getElementById("watchSubscribeBtn"),
     watchUsername: document.getElementById("watchUsername"),
     watchMeta: document.getElementById("watchMeta"),
     watchDescription: document.getElementById("watchDescription"),
@@ -160,13 +177,24 @@
   let selectedFile = null;
   let selectedThumbnailDataUrl = null;
   let currentFilter = "all";
+  let mySubscriptions = new Set();
+  let currentChannelUsername = null;
 
   // ---------- Helpers ----------
 
-  function toast(message, type = "info") {
+  function toast(message, type = "info", icon = null) {
     const el = document.createElement("div");
     el.className = "toast" + (type === "error" ? " error" : "");
-    el.textContent = message;
+    const iconId = icon || (type === "error" ? "ic-close" : "ic-check");
+    const iconEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    iconEl.setAttribute("class", "ico toast-ico");
+    const useEl = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    useEl.setAttribute("href", `#${iconId}`);
+    iconEl.appendChild(useEl);
+    el.appendChild(iconEl);
+    const textEl = document.createElement("span");
+    textEl.textContent = message;
+    el.appendChild(textEl);
     els.toastStack.appendChild(el);
     setTimeout(() => el.remove(), 3800);
   }
@@ -286,7 +314,7 @@
     els.claimCoinsBtn.disabled = true;
     try {
       const data = await Auth.claimDailyCoins();
-      toast(t("coins.claimSuccess", { amount: data.claimed }));
+      toast(t("coins.claimSuccess", { amount: data.claimed }), "info", "ic-coin");
     } catch (err) {
       toast(err.message || t("coins.claimError"), "error");
     } finally {
@@ -297,7 +325,7 @@
   async function handleUnlockPremium() {
     try {
       await Auth.unlockPremium();
-      toast(t("premium.unlockSuccess"));
+      toast(t("premium.unlockSuccess"), "info", "ic-crown");
       refreshCoinsUI();
       refreshUserChip();
     } catch (err) {
@@ -350,7 +378,7 @@
       btn.type = "button";
       btn.className = "dropdown-item" + (lang.code === current ? " active" : "");
       btn.innerHTML = `
-        <span class="lang-flag">${lang.flag}</span>
+        <span class="lang-code">${escapeHtml(lang.code.toUpperCase())}</span>
         <span>${escapeHtml(lang.label)}</span>
         ${checkIcon()}
       `;
@@ -390,9 +418,12 @@
       openSettingsModal(hash.split("/")[2] || "account", true);
     } else if (hash.startsWith("#/studio")) {
       openStudio(true);
+    } else if (hash.startsWith("#/channel/")) {
+      openChannel(decodeURIComponent(hash.split("/")[2] || ""), true);
     } else {
       if (!els.settingsModalOverlay.classList.contains("hidden")) closeSettingsModal(true);
       if (!els.studioOverlay.classList.contains("hidden")) closeStudio(true);
+      if (!els.channelOverlay.classList.contains("hidden")) closeChannel(true);
     }
   }
 
@@ -522,6 +553,108 @@
     document.body.style.overflow = "";
   }
 
+  // ---------- Channels & subscriptions ----------
+
+  async function loadMySubscriptions() {
+    if (!Auth.getUser()) {
+      mySubscriptions = new Set();
+      return;
+    }
+    try {
+      const res = await fetch(API.mySubscriptions);
+      if (!res.ok) return;
+      const data = await res.json();
+      mySubscriptions = new Set((data.channels || []).map((c) => c.toLowerCase()));
+    } catch {
+      /* keep previous state if offline */
+    }
+  }
+
+  function renderSubscribeButton(btn, isSelf, isSubscribed) {
+    btn.classList.toggle("hidden", isSelf);
+    btn.classList.toggle("is-subscribed", isSubscribed);
+    btn.innerHTML = isSubscribed
+      ? `<svg class="ico"><use href="#ic-check"></use></svg><span>${escapeHtml(t("channel.subscribed"))}</span>`
+      : `<svg class="ico"><use href="#ic-plus"></use></svg><span>${escapeHtml(t("channel.subscribe"))}</span>`;
+  }
+
+  function setupWatchSubscribeButton(username) {
+    const me = getUsername().toLowerCase();
+    const isSelf = !me || username.toLowerCase() === me;
+    renderSubscribeButton(els.watchSubscribeBtn, isSelf, mySubscriptions.has(username.toLowerCase()));
+    els.watchSubscribeBtn.onclick = () => handleSubscribeToggle(username, els.watchSubscribeBtn);
+  }
+
+  async function handleSubscribeToggle(username, btn) {
+    if (!Auth.getUser()) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(API.subscribe(username), { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || t("channel.subscribeError"));
+      if (data.subscribed) mySubscriptions.add(username.toLowerCase());
+      else mySubscriptions.delete(username.toLowerCase());
+      renderSubscribeButton(btn, false, data.subscribed);
+      if (currentChannelUsername && currentChannelUsername.toLowerCase() === username.toLowerCase()) {
+        els.channelSubCount.textContent = tp("channel.subscriberCount", data.channel.subscriberCount);
+      }
+    } catch (err) {
+      toast(err.message || t("channel.subscribeError"), "error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function openChannel(username, fromRoute = false) {
+    if (!username) return;
+    if (!fromRoute) navigateToPage(`#/channel/${encodeURIComponent(username.toLowerCase())}`);
+    closeWatch();
+    closeSettingsModal(true);
+    closeStudio(true);
+    currentChannelUsername = username;
+
+    els.channelUsername.textContent = username;
+    els.channelSubCount.textContent = "";
+    setAvatarEl(els.channelAvatar, els.channelAvatarImg, els.channelAvatarFallback, username);
+    els.channelSubscribeBtn.classList.add("hidden");
+    els.channelVideoGrid.innerHTML = "";
+    els.channelEmptyState.classList.add("hidden");
+    els.channelOverlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+
+    try {
+      const res = await fetch(API.channel(username));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || t("channel.loadError"));
+
+      setAvatarEl(els.channelAvatar, els.channelAvatarImg, els.channelAvatarFallback, data.channel.username, data.channel.avatarVersion);
+      els.channelUsername.textContent = data.channel.username;
+      els.channelSubCount.textContent = tp("channel.subscriberCount", data.channel.subscriberCount);
+      renderSubscribeButton(els.channelSubscribeBtn, data.isSelf, data.isSubscribed);
+      els.channelSubscribeBtn.onclick = () => handleSubscribeToggle(data.channel.username, els.channelSubscribeBtn);
+    } catch (err) {
+      toast(err.message || t("channel.loadError"), "error");
+    }
+
+    const channelVideos = allVideos.filter((v) => v.username.toLowerCase() === username.toLowerCase());
+    if (!channelVideos.length) {
+      els.channelEmptyState.classList.remove("hidden");
+    } else {
+      const frag = document.createDocumentFragment();
+      channelVideos
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .forEach((video, i) => frag.appendChild(buildCard(video, i)));
+      els.channelVideoGrid.appendChild(frag);
+    }
+  }
+
+  function closeChannel(fromRoute = false) {
+    if (!fromRoute) navigateAwayFromPage("#/channel");
+    els.channelOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
+    currentChannelUsername = null;
+  }
+
   // ---------- Legal modal ----------
 
   function openLegalModal(type) {
@@ -565,6 +698,8 @@
       list = [...list].sort((a, b) => (b.views || 0) - (a.views || 0));
     } else if (currentFilter === "mine") {
       list = getMyVideos();
+    } else if (currentFilter === "subscriptions") {
+      list = list.filter((v) => mySubscriptions.has(v.username.toLowerCase()));
     }
     return list;
   }
@@ -613,8 +748,13 @@
       return;
     }
 
-    els.emptyStateTitle.textContent = t("empty.title");
-    els.emptyStateDesc.textContent = t("empty.desc");
+    if (currentFilter === "subscriptions") {
+      els.emptyStateTitle.textContent = t("channel.subsEmptyTitle");
+      els.emptyStateDesc.textContent = t("channel.subsEmptyDesc");
+    } else {
+      els.emptyStateTitle.textContent = t("empty.title");
+      els.emptyStateDesc.textContent = t("empty.desc");
+    }
 
     const query = els.searchInput.value.trim().toLowerCase();
     let filtered = getFilteredVideos();
@@ -656,15 +796,21 @@
         <div class="play-hint"><svg class="ico ico--filled"><use href="#ic-logo"></use></svg></div>
       </div>
       <div class="card-meta">
-        ${avatarHtml(video.username)}
+        <span class="card-channel-link" data-channel="${escapeHtml(video.username)}">${avatarHtml(video.username)}</span>
         <div class="card-meta-text">
           <p class="card-title">${escapeHtml(video.title)}</p>
-          <p class="card-sub">${escapeHtml(video.username)}</p>
+          <p class="card-sub card-channel-link" data-channel="${escapeHtml(video.username)}">${escapeHtml(video.username)}</p>
           <p class="card-sub">${t("card.meta", { views: formatCount(video.views), time: timeAgo(video.createdAt) })}</p>
         </div>
       </div>
     `;
 
+    card.querySelectorAll("[data-channel]").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openChannel(video.username);
+      });
+    });
     card.addEventListener("click", () => openWatch(video.id));
     card.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -796,7 +942,7 @@
         blob
       );
 
-      toast(t("offline.saveSuccess"));
+      toast(t("offline.saveSuccess"), "info", "ic-download");
       await refreshOfflineButton(id);
       if (currentFilter === "offline") renderGrid();
     } catch (err) {
@@ -816,6 +962,8 @@
     els.watchTitle.textContent = video.title;
     setAvatarEl(els.watchAvatar, els.watchAvatarImg, els.watchAvatarFallback, video.username);
     els.watchUsername.textContent = video.username;
+    els.watchAuthorLink.onclick = () => openChannel(video.username);
+    setupWatchSubscribeButton(video.username);
     els.watchMeta.textContent = t("offline.saved");
     els.watchDescription.textContent = video.description || "";
     els.likeCount.textContent = "–";
@@ -839,6 +987,8 @@
     els.watchTitle.textContent = video.title;
     setAvatarEl(els.watchAvatar, els.watchAvatarImg, els.watchAvatarFallback, video.username);
     els.watchUsername.textContent = video.username;
+    els.watchAuthorLink.onclick = () => openChannel(video.username);
+    setupWatchSubscribeButton(video.username);
     els.watchMeta.textContent = timeAgo(video.createdAt);
     els.watchDescription.textContent = video.description || "";
     els.likeCount.textContent = formatCount(video.likes);
@@ -1068,28 +1218,23 @@
     els.videoPreview.addEventListener("seeked", captureThumbnailFrame);
   }
 
-  function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result).split(",").pop());
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
   async function uploadFileInChunks(file, uploadId, onProgress) {
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
     let completed = 0;
 
+    // Chunks go over the wire as raw binary (no base64/JSON wrapping), which
+    // avoids the ~33% base64 size inflation and the FileReader encoding step
+    // entirely — a meaningful speedup, especially combined with uploading
+    // several chunks in parallel.
     async function uploadOne(index) {
       const start = index * CHUNK_SIZE;
       const end = Math.min(file.size, start + CHUNK_SIZE);
-      const chunkBase64 = await blobToBase64(file.slice(start, end));
+      const chunk = file.slice(start, end);
 
-      const res = await fetch(API.uploadChunk, {
+      const res = await fetch(`${API.uploadChunk}?id=${uploadId}&index=${index}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: uploadId, index, chunkBase64 }),
+        headers: { "Content-Type": "application/octet-stream" },
+        body: chunk,
       });
 
       if (!res.ok) {
@@ -1197,7 +1342,7 @@
       toast(t("offline.sessionRestored"));
       setFilter("offline");
     } else {
-      await loadVideos();
+      await Promise.all([loadVideos(), loadMySubscriptions()]);
     }
 
     routeFromHash();
@@ -1270,6 +1415,7 @@
     allVideos = [];
     currentVideoId = null;
     currentFilter = "all";
+    mySubscriptions = new Set();
     els.searchInput.value = "";
     toast(t("auth.loggedOut"));
     showAuthGate();
@@ -1387,7 +1533,7 @@
       Auth.setAvatarVersion(data.avatarVersion);
       renderSettingsAccount();
       refreshUserChip();
-      toast(t("settings.avatarSuccess"));
+      toast(t("settings.avatarSuccess"), "info", "ic-image");
     } catch (err) {
       toast(err.message || t("settings.avatarError"), "error");
     }
@@ -1436,6 +1582,10 @@
   els.studioOverlay.addEventListener("click", (e) => {
     if (e.target === els.studioOverlay) closeStudio();
   });
+  els.closeChannelBtn.addEventListener("click", () => closeChannel());
+  els.channelOverlay.addEventListener("click", (e) => {
+    if (e.target === els.channelOverlay) closeChannel();
+  });
   window.addEventListener("popstate", routeFromHash);
 
   document.querySelectorAll(".app-footer-link").forEach((btn) => {
@@ -1452,6 +1602,7 @@
       if (!els.uploadModalOverlay.classList.contains("hidden")) closeUploadModal();
       if (!els.settingsModalOverlay.classList.contains("hidden")) closeSettingsModal();
       if (!els.studioOverlay.classList.contains("hidden")) closeStudio();
+      if (!els.channelOverlay.classList.contains("hidden")) closeChannel();
       if (!els.legalModalOverlay.classList.contains("hidden")) closeLegalModal();
     }
   });

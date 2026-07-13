@@ -1,32 +1,27 @@
 import { getStore } from "@netlify/blobs";
 import { json, errorResponse } from "./utils.js";
+import { getSessionUser } from "./auth-utils.js";
 
-// Jedes Chunk bleibt klar unter dem Payload-Limit von Serverless Functions,
-// dadurch können insgesamt viel größere Videos hochgeladen werden.
-const MAX_CHUNK_BYTES = 4.5 * 1024 * 1024;
+// Each chunk stays safely under the payload limit for serverless functions,
+// which lets much larger videos be uploaded overall. Sent as a raw binary
+// body (not base64-wrapped JSON) to avoid encoding overhead and the ~33%
+// size inflation base64 would add.
+const MAX_CHUNK_BYTES = 6 * 1024 * 1024;
 
 export default async (req) => {
   if (req.method !== "POST") return errorResponse("Method not allowed", 405);
 
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return errorResponse("Ungültiger Request-Body");
-  }
+  const sessionUser = await getSessionUser(req);
+  if (!sessionUser) return errorResponse("Bitte melde dich an.", 401);
 
-  const { id, index, chunkBase64 } = body || {};
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id");
+  const index = Number(url.searchParams.get("index"));
 
-  if (!id || typeof id !== "string") return errorResponse("Fehlende Upload-ID");
+  if (!id) return errorResponse("Fehlende Upload-ID");
   if (!Number.isInteger(index) || index < 0) return errorResponse("Ungültiger Chunk-Index");
-  if (!chunkBase64) return errorResponse("Kein Chunk-Inhalt übermittelt");
 
-  let buffer;
-  try {
-    buffer = Buffer.from(chunkBase64, "base64");
-  } catch {
-    return errorResponse("Chunk konnte nicht gelesen werden");
-  }
+  const buffer = Buffer.from(await req.arrayBuffer());
 
   if (buffer.byteLength === 0) return errorResponse("Chunk ist leer");
   if (buffer.byteLength > MAX_CHUNK_BYTES) {

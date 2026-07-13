@@ -79,6 +79,7 @@ export function publicUser(user) {
     isPremium: !!user.isPremium,
     lastDailyClaim: user.lastDailyClaim || null,
     avatarVersion: user.avatarVersion || 0,
+    subscriberCount: user.subscriberCount || 0,
   };
 }
 

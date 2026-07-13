@@ -1,4 +1,4 @@
-# Socialy 🎬
+# Socialy
 
 Socialy ist eine kleine Video-Sharing-Plattform (im Stil von TikTok/YouTube):
 Nutzer erstellen ein Konto, melden sich an und können Videos mit Titel,
@@ -30,7 +30,12 @@ netlify/functions/auth-me.js         GET  /api/auth/me          → aktuelle Sit
 netlify/functions/auth-utils.js      Gemeinsame Hilfsfunktionen (Passwort-Hashing, Sessions, Cookies, Coin-Konstanten)
 netlify/functions/coins-claim.js     POST /api/coins/claim      → tägliche Coins abholen
 netlify/functions/premium-unlock.js  POST /api/premium/unlock   → Premium mit Coins freischalten
-netlify/functions/upload-chunk.js    POST /api/upload-chunk     → einzelnes Video-Chunk speichern
+netlify/functions/avatar-upload.js   POST /api/avatar-upload    → eigenes Profilbild hochladen
+netlify/functions/avatar.js          GET  /api/avatar/:username → Profilbild ausliefern
+netlify/functions/subscribe.js       POST /api/subscribe/:user  → Kanal abonnieren/entfolgen (toggle)
+netlify/functions/channel.js         GET  /api/channel/:user    → Kanal-Infos + eigener Abo-Status
+netlify/functions/my-subscriptions.js GET /api/subscriptions    → eigene abonnierte Kanäle
+netlify/functions/upload-chunk.js    POST /api/upload-chunk     → einzelnes Video-Chunk speichern (roh, binär)
 netlify/functions/upload-finalize.js POST /api/upload-finalize  → Chunks zusammenfügen + Metadaten speichern
 netlify/functions/videos.js          GET  /api/videos           → Liste aller Videos
 netlify/functions/video-file.js      GET  /api/video/:id        → Video-Datei ausliefern
@@ -179,11 +184,28 @@ Betrieb mit echten Kontaktdaten ausfüllen.
 ## Größere Video-Uploads (Chunk-Upload)
 
 Serverless Functions haben ein Limit für die Größe einer einzelnen Anfrage
-(ca. 6 MB). Die Datei wird im Browser automatisch in **3-MB-Häppchen**
+(ca. 6 MB). Die Datei wird im Browser automatisch in **5-MB-Häppchen**
 zerlegt und hochgeladen (`/api/upload-chunk`); `/api/upload-finalize` fügt
 alle Chunks serverseitig wieder zusammen. Aktuelles Limit: **50 MB pro
 Video** (einstellbar über `MAX_TOTAL_BYTES` in
 `netlify/functions/upload-finalize.js` sowie `MAX_TOTAL_MB` in `js/app.js`).
+
+Die Chunks werden als **rohe Binärdaten** übertragen (nicht mehr als
+Base64-Text in JSON verpackt) und bis zu **sechs gleichzeitig** hochgeladen
+– das spart die ca. 33 % Größenzuwachs durch Base64 sowie die
+Kodierungszeit im Browser und macht Uploads spürbar schneller.
+
+## Kanäle & Abonnements
+
+Jeder Klick auf einen Namen oder ein Profilbild (Video-Karte,
+Wiedergabe-Ansicht) öffnet die **Kanal-Seite** dieser Person
+(`#/channel/<name>`) mit großem Profilbild, Abonnentenzahl und allen ihren
+Videos. Von dort – oder direkt aus der Wiedergabe-Ansicht – lässt sich der
+Kanal **abonnieren**; der Filter **"Abonniert"** im Feed zeigt dann nur
+Videos abonnierter Kanäle. Abonnements werden serverseitig als Kante
+zwischen zwei Konten gespeichert (`netlify/functions/subscribe.js`,
+`netlify/functions/channel.js`, `netlify/functions/my-subscriptions.js`);
+die Abonnentenzahl liegt direkt am Konto des Kanals.
 
 ## Deployment auf Netlify
 
@@ -218,20 +240,21 @@ npx netlify-cli dev
 
 ## Funktionen
 
-- 🔐 Echte Konten mit gehashtem Passwort und `HttpOnly`-Sitzungs-Cookie (bleibt nach Reload angemeldet)
-- 🥃 Durchgängiges Glass-Design mit Blur, Lichtkanten und Tiefe
-- 🖼️ Eigenes Profilbild, überall sichtbar (Header, Kommentare, Karten, Studio)
-- 🪙 Tägliche Coins, Premium-Freischaltung, Fortschritts-Countdown
-- 📴 Videos für immer offline speichern (IndexedDB + Service Worker)
-- 📊 Studio-Statistik-Dashboard als eigene Seite, sobald ein Video hochgeladen wurde
-- 🎬 Eigene Video-Thumbnails wählen oder hochladen
-- ⚙️ Einstellungen als eigene, URL-adressierbare Seite mit Konto, Coins, Design und Sprache
-- 📤 Videos hochladen bis 50 MB dank Chunk-Upload mit Fortschrittsanzeige
-- 🏠 Feed mit Suche und Filtern (Alle/Neu/Beliebt/Meistgesehen/Meine/Offline)
-- ▶️ Videoplayer mit Likes, Aufrufen und Kommentaren
-- 🌐 Vier Sprachen: Deutsch, Englisch, Französisch, Spanisch
-- 🎨 Fünf zurückhaltende, an native System-Designs angelehnte Farbwelten: Graphite, Sand, Lagoon, Bloom, Daylight
-- 🅢 Eigenes Gradient-Logo als App-Icon-Kachel
-- 📄 Footer mit Datenschutz, Impressum und Nutzungsbedingungen
-- 💾 Alles dauerhaft im Backend gespeichert (Netlify Blobs)
-- 📱 Responsives Design mit mobiler Bottom-Navigation
+- Echte Konten mit gehashtem Passwort und `HttpOnly`-Sitzungs-Cookie (bleibt nach Reload angemeldet)
+- Durchgängiges Glass-Design mit Blur, Lichtkanten und Tiefe
+- Eigenes Profilbild, überall sichtbar (Header, Kommentare, Karten, Studio)
+- Tägliche Coins, Premium-Freischaltung, Fortschritts-Countdown
+- Videos für immer offline speichern (IndexedDB + Service Worker)
+- Studio-Statistik-Dashboard als eigene Seite, sobald ein Video hochgeladen wurde
+- Eigene Video-Thumbnails wählen oder hochladen
+- Einstellungen als eigene, URL-adressierbare Seite mit Konto, Coins, Design und Sprache
+- Videos hochladen bis 50 MB dank Chunk-Upload mit Fortschrittsanzeige
+- Kanäle abonnieren, Kanal-Seiten mit allen Videos einer Person besuchen
+- Feed mit Suche und Filtern (Alle/Neu/Beliebt/Meistgesehen/Meine/Abonniert/Offline)
+- Videoplayer mit Likes, Aufrufen und Kommentaren
+- Vier Sprachen: Deutsch, Englisch, Französisch, Spanisch
+- Fünf zurückhaltende, an native System-Designs angelehnte Farbwelten: Graphite, Sand, Lagoon, Bloom, Daylight
+- Eigenes Gradient-Logo als App-Icon-Kachel
+- Footer mit Datenschutz, Impressum und Nutzungsbedingungen
+- Alles dauerhaft im Backend gespeichert (Netlify Blobs)
+- Responsives Design mit mobiler Bottom-Navigation

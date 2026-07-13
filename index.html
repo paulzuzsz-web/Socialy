@@ -161,6 +161,7 @@
     <button type="button" class="filter-pill" data-filter="popular" data-i18n="filter.popular">Beliebt</button>
     <button type="button" class="filter-pill" data-filter="mostViewed" data-i18n="filter.mostViewed">Meistgesehen</button>
     <button type="button" class="filter-pill" data-filter="mine" id="mineFilterPill" data-i18n="filter.mine">Meine Videos</button>
+    <button type="button" class="filter-pill" data-filter="subscriptions" id="subscriptionsFilterPill" data-i18n="filter.subscriptions">Abonniert</button>
     <button type="button" class="filter-pill" data-filter="offline" id="offlineFilterPill" data-i18n="filter.offline">Offline</button>
   </div>
 </header>
@@ -219,11 +220,14 @@
     <div class="watch-info">
       <h2 class="watch-title" id="watchTitle"></h2>
       <div class="watch-author">
-        <span class="avatar" id="watchAvatar"><img class="avatar-img" id="watchAvatarImg" alt="" /><span class="avatar-fallback" id="watchAvatarFallback"></span></span>
-        <div>
-          <div class="name" id="watchUsername"></div>
-          <div class="date" id="watchMeta"></div>
-        </div>
+        <button type="button" class="watch-author-link" id="watchAuthorLink">
+          <span class="avatar" id="watchAvatar"><img class="avatar-img" id="watchAvatarImg" alt="" /><span class="avatar-fallback" id="watchAvatarFallback"></span></span>
+          <div>
+            <div class="name" id="watchUsername"></div>
+            <div class="date" id="watchMeta"></div>
+          </div>
+        </button>
+        <button type="button" class="btn btn-ghost watch-subscribe-btn hidden" id="watchSubscribeBtn"></button>
       </div>
       <p class="watch-description" id="watchDescription"></p>
       <div class="watch-actions">
@@ -418,6 +422,35 @@
     <div id="studioVideoListWrap" class="hidden">
       <h3 class="studio-list-title" data-i18n="studio.videoListTitle">Deine Videos</h3>
       <div class="studio-video-list" id="studioVideoList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Channel page -->
+<div class="watch-overlay page-overlay hidden" id="channelOverlay">
+  <div class="page-topbar">
+    <button class="btn btn-icon page-back-btn" id="closeChannelBtn" data-i18n-title="watch.close" title="Zurück">
+      <svg class="ico"><use href="#ic-back"></use></svg>
+    </button>
+    <h2 class="studio-title" id="channelTopbarTitle" data-i18n="channel.title">Kanal</h2>
+    <span class="page-head-spacer" aria-hidden="true"></span>
+  </div>
+  <div class="studio-shell">
+    <div class="channel-header">
+      <span class="avatar xl" id="channelAvatar"><img class="avatar-img" id="channelAvatarImg" alt="" /><span class="avatar-fallback" id="channelAvatarFallback"></span></span>
+      <div class="channel-header-text">
+        <div class="channel-username" id="channelUsername"></div>
+        <div class="channel-meta" id="channelSubCount"></div>
+      </div>
+      <button type="button" class="btn btn-primary channel-subscribe-btn" id="channelSubscribeBtn"></button>
+    </div>
+
+    <div class="video-grid" id="channelVideoGrid"></div>
+
+    <div class="empty-state hidden" id="channelEmptyState">
+      <svg class="ico"><use href="#ic-video"></use></svg>
+      <h3 data-i18n="channel.emptyTitle">Noch keine Videos</h3>
+      <p data-i18n="channel.emptyDesc">Dieser Kanal hat noch nichts hochgeladen.</p>
     </div>
   </div>
 </div>

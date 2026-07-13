@@ -38,6 +38,7 @@ export default async (req) => {
     coins: SIGNUP_BONUS_COINS,
     isPremium: false,
     lastDailyClaim: null,
+    subscriberCount: 0,
   };
   await usersStore.setJSON(key, user);
 
