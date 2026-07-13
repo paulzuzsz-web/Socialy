@@ -35,6 +35,7 @@ netlify/functions/avatar.js          GET  /api/avatar/:username → Profilbild a
 netlify/functions/subscribe.js       POST /api/subscribe/:user  → Kanal abonnieren/entfolgen (toggle)
 netlify/functions/channel.js         GET  /api/channel/:user    → Kanal-Infos + eigener Abo-Status
 netlify/functions/my-subscriptions.js GET /api/subscriptions    → eigene abonnierte Kanäle
+netlify/functions/moderation-utils.js Gemeinsame Hilfsfunktion: KI-Inhaltsprüfung (Claude Vision, optional)
 netlify/functions/upload-chunk.js    POST /api/upload-chunk     → einzelnes Video-Chunk speichern (roh, binär)
 netlify/functions/upload-finalize.js POST /api/upload-finalize  → Chunks zusammenfügen + Metadaten speichern
 netlify/functions/videos.js          GET  /api/videos           → Liste aller Videos
@@ -207,6 +208,40 @@ zwischen zwei Konten gespeichert (`netlify/functions/subscribe.js`,
 `netlify/functions/channel.js`, `netlify/functions/my-subscriptions.js`);
 die Abonnentenzahl liegt direkt am Konto des Kanals.
 
+## Shorts
+
+Beim Hochladen wird automatisch die Videolänge erkannt. Videos mit **maximal
+1 Minute** gelten als **Short** und bekommen einen eigenen Button/Filter
+("⚡ Shorts") oben im Feed, außerdem ein Dauer-Abzeichen auf jeder
+Video-Karte (z. B. `0:45`). Längere Videos laufen ganz normal im
+allgemeinen Feed mit.
+
+## Automatische Inhaltsprüfung (Altersfreigabe 12+)
+
+Socialy ist für ein Publikum **ab 12 Jahren** gedacht. Beim Veröffentlichen
+wird das automatisch erzeugte Vorschaubild jedes Videos an ein
+KI-Sichtmodell (Claude, Anthropic) geschickt und auf grafische Gewalt oder
+sexuelle/explizite Inhalte geprüft, **bevor** irgendetwas gespeichert wird
+(`netlify/functions/moderation-utils.js`, eingebunden in
+`upload-finalize.js`). Wird ein Video als ungeeignet eingestuft, wird nichts
+gespeichert und der Upload mit einer klaren Fehlermeldung abgelehnt.
+
+**Wichtig – das ist eine Best-Effort-Prüfung, kein vollständiger Ersatz für
+menschliche Moderation:**
+
+- Geprüft wird nur das **eine Vorschaubild**, nicht das gesamte Video
+  Bild für Bild.
+- Die Prüfung läuft nur, wenn ein **`ANTHROPIC_API_KEY`** als
+  Umgebungsvariable in den Netlify-Site-Einstellungen hinterlegt ist
+  (Site settings → Environment variables). **Ohne Schlüssel wird die
+  Prüfung übersprungen** (fail-open) und jeder Upload geht durch, damit die
+  App auch ohne diese Konfiguration nutzbar bleibt – für einen produktiven
+  Betrieb mit echter Altersfreigabe sollte der Schlüssel unbedingt gesetzt
+  werden.
+- Optional lässt sich das Modell über die Umgebungsvariable
+  `MODERATION_MODEL` überschreiben (Standard: ein schnelles, günstiges
+  Vision-Modell).
+
 ## Deployment auf Netlify
 
 ### Variante A – Über GitHub (empfohlen)
@@ -219,6 +254,10 @@ die Abonnentenzahl liegt direkt am Konto des Kanals.
    (die `netlify.toml` ist schon korrekt eingerichtet).
 5. **"Deploy site"** klicken – Netlify installiert automatisch
    `@netlify/blobs` und aktiviert Functions und Service Worker.
+6. Optional, aber empfohlen für die Altersfreigabe 12+: unter
+   **Site settings → Environment variables** einen `ANTHROPIC_API_KEY`
+   hinterlegen, um die automatische Inhaltsprüfung von Uploads zu
+   aktivieren (siehe Abschnitt "Automatische Inhaltsprüfung" oben).
 
 ### Variante B – Drag & Drop (schneller Test)
 
@@ -250,6 +289,8 @@ npx netlify-cli dev
 - Einstellungen als eigene, URL-adressierbare Seite mit Konto, Coins, Design und Sprache
 - Videos hochladen bis 50 MB dank Chunk-Upload mit Fortschrittsanzeige
 - Kanäle abonnieren, Kanal-Seiten mit allen Videos einer Person besuchen
+- Shorts-Filter für Videos bis 1 Minute, mit Dauer-Abzeichen auf jeder Karte
+- Automatische KI-Inhaltsprüfung der Uploads (Altersfreigabe 12+, optional per API-Key)
 - Feed mit Suche und Filtern (Alle/Neu/Beliebt/Meistgesehen/Meine/Abonniert/Offline)
 - Videoplayer mit Likes, Aufrufen und Kommentaren
 - Vier Sprachen: Deutsch, Englisch, Französisch, Spanisch

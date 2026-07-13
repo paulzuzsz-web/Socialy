@@ -176,6 +176,8 @@
   let currentVideoId = null;
   let selectedFile = null;
   let selectedThumbnailDataUrl = null;
+  let selectedDurationSeconds = 0;
+  const SHORT_MAX_SECONDS = 60;
   let currentFilter = "all";
   let mySubscriptions = new Set();
   let currentChannelUsername = null;
@@ -226,6 +228,15 @@
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(".0", "") + "M";
     if (n >= 1_000) return (n / 1_000).toFixed(1).replace(".0", "") + "K";
     return String(n);
+  }
+
+  function formatDuration(seconds) {
+    seconds = Math.max(0, Math.round(seconds || 0));
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${m}:${String(s).padStart(2, "0")}`;
   }
 
   function formatCountdown(ms) {
@@ -700,6 +711,8 @@
       list = getMyVideos();
     } else if (currentFilter === "subscriptions") {
       list = list.filter((v) => mySubscriptions.has(v.username.toLowerCase()));
+    } else if (currentFilter === "shorts") {
+      list = list.filter((v) => v.isShort);
     }
     return list;
   }
@@ -751,6 +764,9 @@
     if (currentFilter === "subscriptions") {
       els.emptyStateTitle.textContent = t("channel.subsEmptyTitle");
       els.emptyStateDesc.textContent = t("channel.subsEmptyDesc");
+    } else if (currentFilter === "shorts") {
+      els.emptyStateTitle.textContent = t("shorts.emptyTitle");
+      els.emptyStateDesc.textContent = t("shorts.emptyDesc");
     } else {
       els.emptyStateTitle.textContent = t("empty.title");
       els.emptyStateDesc.textContent = t("empty.desc");
@@ -790,9 +806,14 @@
       ? `<img class="thumb" loading="lazy" src="${API.thumbnail(video.id)}" alt="${escapeHtml(video.title)}" />`
       : `<div class="thumb-fallback"><svg class="ico"><use href="#ic-video"></use></svg></div>`;
 
+    const durationBadge = video.durationSeconds
+      ? `<span class="duration-badge${video.isShort ? " duration-badge--short" : ""}">${escapeHtml(formatDuration(video.durationSeconds))}</span>`
+      : "";
+
     card.innerHTML = `
       <div class="thumb-wrap">
         ${thumbHtml}
+        ${durationBadge}
         <div class="play-hint"><svg class="ico ico--filled"><use href="#ic-logo"></use></svg></div>
       </div>
       <div class="card-meta">
@@ -859,10 +880,14 @@
     const thumbHtml = video.thumbnailBlob
       ? `<img class="thumb" src="${URL.createObjectURL(video.thumbnailBlob)}" alt="${escapeHtml(video.title)}" />`
       : `<div class="thumb-fallback"><svg class="ico"><use href="#ic-video"></use></svg></div>`;
+    const durationBadge = video.durationSeconds
+      ? `<span class="duration-badge${video.isShort ? " duration-badge--short" : ""}">${escapeHtml(formatDuration(video.durationSeconds))}</span>`
+      : "";
 
     card.innerHTML = `
       <div class="thumb-wrap">
         ${thumbHtml}
+        ${durationBadge}
         <div class="play-hint"><svg class="ico ico--filled"><use href="#ic-logo"></use></svg></div>
       </div>
       <div class="card-meta">
@@ -1193,6 +1218,7 @@
     els.uploadError.classList.remove("show");
     selectedFile = file;
     selectedThumbnailDataUrl = null;
+    selectedDurationSeconds = 0;
     els.dropzoneLabel.textContent = file.name;
 
     const objectUrl = URL.createObjectURL(file);
@@ -1204,6 +1230,7 @@
       () => {
         try {
           const duration = els.videoPreview.duration || 1;
+          selectedDurationSeconds = duration;
           els.thumbScrubRange.max = String(Math.max(1, Math.floor(duration * 10)));
           els.thumbScrubRange.value = "0";
           els.videoPreview.currentTime = Math.min(0.5, duration / 4);
@@ -1294,6 +1321,7 @@
           description,
           videoType: selectedFile.type || "video/mp4",
           thumbnailBase64: selectedThumbnailDataUrl,
+          durationSeconds: Math.round(selectedDurationSeconds) || 0,
         }),
       });
 

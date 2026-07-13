@@ -28,6 +28,7 @@
       <stop offset="100%" style="stop-color:var(--accent2)"></stop>
     </linearGradient>
     <symbol id="ic-back" viewBox="0 0 24 24"><polyline points="15 5 8 12 15 19"></polyline></symbol>
+    <symbol id="ic-bolt" viewBox="0 0 24 24"><polygon points="13 2 4 14 11 14 10 22 20 10 13 10 13 2" fill="currentColor" stroke="none"></polygon></symbol>
     <symbol id="ic-brand" viewBox="0 0 24 24"><path d="M16.6 8.1c0-2.5-2-4.3-4.6-4.3S7.4 5.4 7.4 7.5c0 4.6 9 3.5 9 8.6 0 2.5-2.1 4.3-4.7 4.3s-4.8-1.6-4.9-4.3"></path></symbol>
     <symbol id="ic-logo" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></symbol>
     <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></symbol>
@@ -157,6 +158,10 @@
 
   <div class="filter-row" id="filterRow">
     <button type="button" class="filter-pill active" data-filter="all" data-i18n="filter.all">Alle</button>
+    <button type="button" class="filter-pill filter-pill--shorts" data-filter="shorts" id="shortsFilterPill">
+      <svg class="ico ico--filled"><use href="#ic-bolt"></use></svg>
+      <span data-i18n="filter.shorts">Shorts</span>
+    </button>
     <button type="button" class="filter-pill" data-filter="new" data-i18n="filter.new">Neu</button>
     <button type="button" class="filter-pill" data-filter="popular" data-i18n="filter.popular">Beliebt</button>
     <button type="button" class="filter-pill" data-filter="mostViewed" data-i18n="filter.mostViewed">Meistgesehen</button>
