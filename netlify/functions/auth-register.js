@@ -45,7 +45,7 @@ export default async (req) => {
 
   return json(
     { user: publicUser(user) },
-    { status: 201, headers: { "Set-Cookie": sessionCookieHeader(token) } }
+    { status: 201, headers: { "Set-Cookie": sessionCookieHeader(token, req) } }
   );
 };
 

@@ -6,7 +6,7 @@ export default async (req) => {
 
   await deleteSession(req);
 
-  return json({ ok: true }, { headers: { "Set-Cookie": clearSessionCookieHeader() } });
+  return json({ ok: true }, { headers: { "Set-Cookie": clearSessionCookieHeader(req) } });
 };
 
 export const config = { path: "/api/auth/logout" };

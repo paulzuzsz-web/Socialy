@@ -130,11 +130,15 @@ Erkennung der Browsersprache beim ersten Besuch.
 
 ## Designs
 
-- **Neon** – dunkel, Pink/Violett (TikTok-Stil)
-- **Berg** – Tannengrün, Fels-Grau und warmes Amber
-- **Ozean** – tiefes Blau mit türkisen Akzenten
-- **Sonnenuntergang** – warmes Dunkelrot/Orange
-- **Hell** – helles Design mit warmem, luftigem Glass-Look
+Ein zurückhaltenderes, an native System-Designs (Apple) angelehntes
+Farbkonzept: neutrale Grundtöne mit jeweils genau einem prägnanten Akzentpaar
+statt eines durchgängig satten Neon-Hintergrunds.
+
+- **Graphite** – neutrales Anthrazit mit Blau/Indigo-Akzent (Standard)
+- **Sand** – warmes Anthrazit mit Amber/Terrakotta-Akzent
+- **Lagoon** – tiefes Petrol mit Cyan/Türkis-Akzent
+- **Bloom** – gedecktes Aubergine mit Pink/Violett-Akzent
+- **Daylight** – helles, luftiges Design mit klassischem Systemblau
 
 Jedes Design ist über CSS-Variablen definiert (`css/style.css`, Abschnitt
 "Themes") – weitere eigene Designs lassen sich ergänzen, indem man dort
@@ -143,11 +147,26 @@ in der `THEMES`-Liste einträgt.
 
 ## Logo
 
-Die Wortmarke ist ein eigenes "S"-Zeichen im TikTok-artigen Duotone/Glitch-
-Stil: zwei leicht versetzte, farbige Kopien des Buchstabens hinter einer
-weißen Hauptversion erzeugen den bekannten Schichteffekt – umgesetzt in
-reinem CSS (`.s-glitch` in `css/style.css`), automatisch farblich passend
-zum aktiven Design.
+Die Wortmarke ist ein eigenständiges Icon: ein durchgezogener, gradientfarbener
+"S"-Schriftzug (SVG, `#ic-brand` im Icon-Sprite) in einem App-Icon-artigen
+abgerundeten Quadrat – automatisch farblich passend zum aktiven Design, da
+der Verlauf `--accent1`/`--accent2` referenziert.
+
+## Profilbild
+
+Im Konto-Tab der Einstellungen kann jede:r Nutzer:in ein eigenes Profilbild
+hochladen (wird clientseitig auf 256×256 zugeschnitten). Es erscheint überall,
+wo bisher nur die Initialen zu sehen waren: Header, Kommentare, Video-Karten,
+Wiedergabe-Ansicht und Studio – mit automatischem Rückfall auf die Initialen,
+falls kein Bild gesetzt ist.
+
+## Einstellungen & Studio als echte Seiten
+
+Einstellungen und Studio sind über eigene URL-Fragmente erreichbar
+(`#/settings/<tab>`, `#/studio`) statt reiner Overlay-Dialoge: ein Reload
+bleibt auf derselben Ansicht, der Zurück-Button des Browsers verlässt die
+Seite, und beide sind als eigenständige, vollflächige Seiten mit
+Zurück-Pfeil im Kopfbereich gestaltet statt als zentrierte Dialoge.
 
 ## Datenschutz, Impressum & Nutzungsbedingungen
 
@@ -184,9 +203,11 @@ Video** (einstellbar über `MAX_TOTAL_BYTES` in
 1. Auf [app.netlify.com/drop](https://app.netlify.com/drop) gehen.
 2. Den **gesamten Projektordner** in das Upload-Feld ziehen.
 
-> Netlify Blobs benötigt keine zusätzliche Konfiguration. Die
-> Session-Cookies benötigen HTTPS (`Secure`-Flag) – bei jeder Netlify-Domain
-> automatisch gegeben.
+> Netlify Blobs benötigt keine zusätzliche Konfiguration. Das
+> Session-Cookie setzt das `Secure`-Flag automatisch nur dann, wenn die
+> Anfrage tatsächlich über HTTPS kam (bei jeder Netlify-Domain der Fall) –
+> so bleibt man auch bei lokalen HTTP-Testservern nach einem Reload
+> angemeldet, statt dass der Browser das Cookie stillschweigend verwirft.
 
 ### Lokal testen (optional)
 
@@ -197,19 +218,20 @@ npx netlify-cli dev
 
 ## Funktionen
 
-- 🔐 Echte Konten mit gehashtem Passwort und `HttpOnly`-Sitzungs-Cookie
+- 🔐 Echte Konten mit gehashtem Passwort und `HttpOnly`-Sitzungs-Cookie (bleibt nach Reload angemeldet)
 - 🥃 Durchgängiges Glass-Design mit Blur, Lichtkanten und Tiefe
+- 🖼️ Eigenes Profilbild, überall sichtbar (Header, Kommentare, Karten, Studio)
 - 🪙 Tägliche Coins, Premium-Freischaltung, Fortschritts-Countdown
 - 📴 Videos für immer offline speichern (IndexedDB + Service Worker)
-- 📊 Studio-Statistik-Dashboard sobald ein Video hochgeladen wurde
-- 🖼️ Eigene Video-Thumbnails wählen oder hochladen
-- ⚙️ Einstellungen mit Konto, Coins, Design und Sprache
+- 📊 Studio-Statistik-Dashboard als eigene Seite, sobald ein Video hochgeladen wurde
+- 🎬 Eigene Video-Thumbnails wählen oder hochladen
+- ⚙️ Einstellungen als eigene, URL-adressierbare Seite mit Konto, Coins, Design und Sprache
 - 📤 Videos hochladen bis 50 MB dank Chunk-Upload mit Fortschrittsanzeige
 - 🏠 Feed mit Suche und Filtern (Alle/Neu/Beliebt/Meistgesehen/Meine/Offline)
 - ▶️ Videoplayer mit Likes, Aufrufen und Kommentaren
 - 🌐 Vier Sprachen: Deutsch, Englisch, Französisch, Spanisch
-- 🎨 Fünf Designs: Neon, Berg, Ozean, Sonnenuntergang, Hell
-- 🅢 Eigenes Logo im TikTok-artigen Duotone-"S"-Stil
+- 🎨 Fünf zurückhaltende, an native System-Designs angelehnte Farbwelten: Graphite, Sand, Lagoon, Bloom, Daylight
+- 🅢 Eigenes Gradient-Logo als App-Icon-Kachel
 - 📄 Footer mit Datenschutz, Impressum und Nutzungsbedingungen
 - 💾 Alles dauerhaft im Backend gespeichert (Netlify Blobs)
 - 📱 Responsives Design mit mobiler Bottom-Navigation

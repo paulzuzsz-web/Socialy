@@ -15,6 +15,8 @@
     like: (id) => `/api/like/${id}`,
     view: (id) => `/api/view/${id}`,
     comment: (id) => `/api/comment/${id}`,
+    avatarUpload: "/api/avatar-upload",
+    avatar: (username) => `/api/avatar/${encodeURIComponent((username || "").toLowerCase())}`,
   };
 
   const MAX_TOTAL_MB = 50;
@@ -59,6 +61,8 @@
 
     userChipBtn: document.getElementById("userChipBtn"),
     userAvatar: document.getElementById("userAvatar"),
+    userAvatarImg: document.getElementById("userAvatarImg"),
+    userAvatarFallback: document.getElementById("userAvatarFallback"),
     userNameLabel: document.getElementById("userNameLabel"),
     userChipPremiumBadge: document.getElementById("userChipPremiumBadge"),
     settingsBtn: document.getElementById("settingsBtn"),
@@ -66,7 +70,10 @@
     settingsModalOverlay: document.getElementById("settingsModalOverlay"),
     closeSettingsBtn: document.getElementById("closeSettingsBtn"),
     settingsTabs: document.getElementById("settingsTabs"),
-    settingsAvatar: document.getElementById("settingsAvatar"),
+    settingsAvatarBtn: document.getElementById("settingsAvatarBtn"),
+    settingsAvatarImg: document.getElementById("settingsAvatarImg"),
+    settingsAvatarFallback: document.getElementById("settingsAvatarFallback"),
+    avatarFileInput: document.getElementById("avatarFileInput"),
     settingsUsername: document.getElementById("settingsUsername"),
     settingsMemberSince: document.getElementById("settingsMemberSince"),
     settingsLogoutBtn: document.getElementById("settingsLogoutBtn"),
@@ -123,6 +130,8 @@
     watchVideo: document.getElementById("watchVideo"),
     watchTitle: document.getElementById("watchTitle"),
     watchAvatar: document.getElementById("watchAvatar"),
+    watchAvatarImg: document.getElementById("watchAvatarImg"),
+    watchAvatarFallback: document.getElementById("watchAvatarFallback"),
     watchUsername: document.getElementById("watchUsername"),
     watchMeta: document.getElementById("watchMeta"),
     watchDescription: document.getElementById("watchDescription"),
@@ -173,6 +182,17 @@
     return name.trim().slice(0, 1).toUpperCase();
   }
 
+  function avatarHtml(username, extraClass = "") {
+    return `<span class="avatar${extraClass ? " " + extraClass : ""}"><img class="avatar-img" src="${API.avatar(username)}" alt="" loading="lazy" /><span class="avatar-fallback">${escapeHtml(initials(username))}</span></span>`;
+  }
+
+  function setAvatarEl(wrapperEl, imgEl, fallbackEl, username, cacheBust) {
+    if (!wrapperEl || !imgEl || !fallbackEl) return;
+    wrapperEl.classList.remove("img-error");
+    fallbackEl.textContent = initials(username);
+    imgEl.src = API.avatar(username) + (cacheBust ? `?v=${cacheBust}` : "");
+  }
+
   function formatCount(n) {
     n = n || 0;
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(".0", "") + "M";
@@ -216,7 +236,7 @@
   function refreshUserChip() {
     const user = Auth.getUser();
     const name = user ? user.username : "";
-    els.userAvatar.textContent = initials(name || t("nav.guest"));
+    setAvatarEl(els.userAvatar, els.userAvatarImg, els.userAvatarFallback, name || t("nav.guest"), user?.avatarVersion);
     els.userNameLabel.textContent = name || t("nav.guest");
     els.userChipPremiumBadge.classList.toggle("hidden", !(user && user.isPremium));
   }
@@ -290,7 +310,7 @@
   function renderSettingsAccount() {
     const user = Auth.getUser();
     if (!user) return;
-    els.settingsAvatar.textContent = initials(user.username);
+    setAvatarEl(els.settingsAvatarBtn, els.settingsAvatarImg, els.settingsAvatarFallback, user.username, user.avatarVersion);
     els.settingsUsername.textContent = user.username;
     const date = user.createdAt ? new Date(user.createdAt).toLocaleDateString(getLanguage()) : "";
     els.settingsMemberSince.textContent = t("settings.memberSince", { date });
@@ -342,6 +362,40 @@
     });
   }
 
+  // ---------- Routing ----------
+  // Settings and Studio are real pages: reachable via a URL hash, so a
+  // reload keeps you on the same page and the browser back button leaves it.
+
+  function navigateToPage(path) {
+    if (location.hash !== path) history.pushState({ socialyPage: path }, "", path);
+  }
+
+  // Updates the hash without creating a new history entry — used when
+  // switching tabs inside an already-open page, so the back button leaves
+  // the page in one step instead of stepping back through each tab.
+  function updatePageHash(path) {
+    if (location.hash !== path) history.replaceState({ socialyPage: path }, "", path);
+  }
+
+  function navigateAwayFromPage(prefix) {
+    if (location.hash.startsWith(prefix)) {
+      history.pushState({}, "", location.pathname + location.search);
+    }
+  }
+
+  function routeFromHash() {
+    if (els.appRoot.classList.contains("hidden")) return;
+    const hash = location.hash;
+    if (hash.startsWith("#/settings")) {
+      openSettingsModal(hash.split("/")[2] || "account", true);
+    } else if (hash.startsWith("#/studio")) {
+      openStudio(true);
+    } else {
+      if (!els.settingsModalOverlay.classList.contains("hidden")) closeSettingsModal(true);
+      if (!els.studioOverlay.classList.contains("hidden")) closeStudio(true);
+    }
+  }
+
   function switchSettingsTab(tabName) {
     [...els.settingsTabs.querySelectorAll(".settings-tab")].forEach((b) =>
       b.classList.toggle("active", b.dataset.settingstab === tabName)
@@ -351,15 +405,19 @@
     });
   }
 
-  function openSettingsModal(tabName = "account") {
+  function openSettingsModal(tabName = "account", fromRoute = false) {
+    if (!fromRoute) navigateToPage(`#/settings/${tabName}`);
     renderSettingsAccount();
     refreshCoinsUI();
     switchSettingsTab(tabName);
     els.settingsModalOverlay.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
   }
 
-  function closeSettingsModal() {
+  function closeSettingsModal(fromRoute = false) {
+    if (!fromRoute) navigateAwayFromPage("#/settings");
     els.settingsModalOverlay.classList.add("hidden");
+    document.body.style.overflow = "";
   }
 
   function refreshAllText() {
@@ -450,14 +508,16 @@
     els.studioVideoList.appendChild(frag);
   }
 
-  function openStudio() {
-    closeSettingsModal();
+  function openStudio(fromRoute = false) {
+    closeSettingsModal(true);
+    if (!fromRoute) navigateToPage("#/studio");
     renderStudio();
     els.studioOverlay.classList.remove("hidden");
     document.body.style.overflow = "hidden";
   }
 
-  function closeStudio() {
+  function closeStudio(fromRoute = false) {
+    if (!fromRoute) navigateAwayFromPage("#/studio");
     els.studioOverlay.classList.add("hidden");
     document.body.style.overflow = "";
   }
@@ -596,7 +656,7 @@
         <div class="play-hint"><svg class="ico ico--filled"><use href="#ic-logo"></use></svg></div>
       </div>
       <div class="card-meta">
-        <span class="avatar">${initials(video.username)}</span>
+        ${avatarHtml(video.username)}
         <div class="card-meta-text">
           <p class="card-title">${escapeHtml(video.title)}</p>
           <p class="card-sub">${escapeHtml(video.username)}</p>
@@ -660,7 +720,7 @@
         <div class="play-hint"><svg class="ico ico--filled"><use href="#ic-logo"></use></svg></div>
       </div>
       <div class="card-meta">
-        <span class="avatar">${initials(video.username)}</span>
+        ${avatarHtml(video.username)}
         <div class="card-meta-text">
           <p class="card-title">${escapeHtml(video.title)}</p>
           <p class="card-sub">${escapeHtml(video.username)}</p>
@@ -754,7 +814,7 @@
     currentVideoId = id;
     els.watchVideo.src = URL.createObjectURL(video.blob);
     els.watchTitle.textContent = video.title;
-    els.watchAvatar.textContent = initials(video.username);
+    setAvatarEl(els.watchAvatar, els.watchAvatarImg, els.watchAvatarFallback, video.username);
     els.watchUsername.textContent = video.username;
     els.watchMeta.textContent = t("offline.saved");
     els.watchDescription.textContent = video.description || "";
@@ -777,7 +837,7 @@
     currentVideoId = id;
     els.watchVideo.src = API.video(id);
     els.watchTitle.textContent = video.title;
-    els.watchAvatar.textContent = initials(video.username);
+    setAvatarEl(els.watchAvatar, els.watchAvatarImg, els.watchAvatarFallback, video.username);
     els.watchUsername.textContent = video.username;
     els.watchMeta.textContent = timeAgo(video.createdAt);
     els.watchDescription.textContent = video.description || "";
@@ -830,7 +890,7 @@
       const item = document.createElement("div");
       item.className = "comment-item";
       item.innerHTML = `
-        <span class="avatar" style="width:30px;height:30px;font-size:13px;">${initials(c.author)}</span>
+        ${avatarHtml(c.author, "comment-avatar")}
         <div class="comment-body">
           <span class="comment-author">${escapeHtml(c.author)}</span>${escapeHtml(c.text)}
           <span class="comment-time">${timeAgo(c.createdAt)}</span>
@@ -1139,6 +1199,8 @@
     } else {
       await loadVideos();
     }
+
+    routeFromHash();
   }
 
   function showAuthGate() {
@@ -1284,6 +1346,65 @@
     reader.readAsDataURL(file);
   });
 
+  function resizeImageForAvatar(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const size = 256;
+          const minSide = Math.min(img.width, img.height);
+          const sx = (img.width - minSide) / 2;
+          const sy = (img.height - minSide) / 2;
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          canvas.getContext("2d").drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+        };
+        img.onerror = () => reject(new Error("image decode failed"));
+        img.src = String(reader.result);
+      };
+      reader.onerror = () => reject(new Error("file read failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  els.settingsAvatarBtn.addEventListener("click", () => els.avatarFileInput.click());
+  els.avatarFileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    try {
+      const dataUrl = await resizeImageForAvatar(file);
+      const res = await fetch(API.avatarUpload, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: dataUrl, contentType: "image/jpeg" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || t("settings.avatarError"));
+      Auth.setAvatarVersion(data.avatarVersion);
+      renderSettingsAccount();
+      refreshUserChip();
+      toast(t("settings.avatarSuccess"));
+    } catch (err) {
+      toast(err.message || t("settings.avatarError"), "error");
+    }
+  });
+
+  // Avatar <img> tags 404 whenever a user has no profile picture yet; fall
+  // back to the initials badge underneath instead of showing a broken image.
+  document.addEventListener(
+    "error",
+    (e) => {
+      if (e.target?.classList?.contains("avatar-img")) {
+        e.target.closest(".avatar")?.classList.add("img-error");
+      }
+    },
+    true
+  );
+
   els.closeWatchBtn.addEventListener("click", closeWatch);
   els.watchOverlay.addEventListener("click", (e) => {
     if (e.target === els.watchOverlay) closeWatch();
@@ -1295,7 +1416,7 @@
   els.userChipBtn.addEventListener("click", () => openSettingsModal("account"));
   els.settingsBtn.addEventListener("click", () => openSettingsModal("account"));
   els.coinChipBtn.addEventListener("click", () => openSettingsModal("coins"));
-  els.closeSettingsBtn.addEventListener("click", closeSettingsModal);
+  els.closeSettingsBtn.addEventListener("click", () => closeSettingsModal());
   els.settingsModalOverlay.addEventListener("click", (e) => {
     if (e.target === els.settingsModalOverlay) closeSettingsModal();
   });
@@ -1303,17 +1424,19 @@
     const btn = e.target.closest(".settings-tab");
     if (btn) {
       switchSettingsTab(btn.dataset.settingstab);
+      updatePageHash(`#/settings/${btn.dataset.settingstab}`);
       refreshCoinsUI();
     }
   });
   els.settingsLogoutBtn.addEventListener("click", handleLogout);
   els.claimCoinsBtn.addEventListener("click", handleClaimCoins);
   els.unlockPremiumBtn.addEventListener("click", handleUnlockPremium);
-  els.openStudioBtn.addEventListener("click", openStudio);
-  els.closeStudioBtn.addEventListener("click", closeStudio);
+  els.openStudioBtn.addEventListener("click", () => openStudio());
+  els.closeStudioBtn.addEventListener("click", () => closeStudio());
   els.studioOverlay.addEventListener("click", (e) => {
     if (e.target === els.studioOverlay) closeStudio();
   });
+  window.addEventListener("popstate", routeFromHash);
 
   document.querySelectorAll(".app-footer-link").forEach((btn) => {
     btn.addEventListener("click", () => openLegalModal(btn.dataset.legal));
