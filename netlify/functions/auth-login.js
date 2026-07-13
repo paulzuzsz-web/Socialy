@@ -1,6 +1,6 @@
 import { getStore } from "@netlify/blobs";
 import { json, errorResponse } from "./utils.js";
-import { verifyPassword, createSession, sessionCookieHeader } from "./auth-utils.js";
+import { verifyPassword, createSession, sessionCookieHeader, publicUser } from "./auth-utils.js";
 
 export default async (req) => {
   if (req.method !== "POST") return errorResponse("Method not allowed", 405);
@@ -29,7 +29,7 @@ export default async (req) => {
   const token = await createSession(key);
 
   return json(
-    { user: { username: user.username, createdAt: user.createdAt } },
+    { user: publicUser(user) },
     { headers: { "Set-Cookie": sessionCookieHeader(token) } }
   );
 };

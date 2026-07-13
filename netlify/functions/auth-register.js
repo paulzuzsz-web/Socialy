@@ -1,6 +1,6 @@
 import { getStore } from "@netlify/blobs";
 import { json, errorResponse } from "./utils.js";
-import { hashPassword, createSession, sessionCookieHeader } from "./auth-utils.js";
+import { hashPassword, createSession, sessionCookieHeader, publicUser, SIGNUP_BONUS_COINS } from "./auth-utils.js";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,24}$/;
 
@@ -35,13 +35,16 @@ export default async (req) => {
     username,
     passwordHash: hashPassword(password),
     createdAt: new Date().toISOString(),
+    coins: SIGNUP_BONUS_COINS,
+    isPremium: false,
+    lastDailyClaim: null,
   };
   await usersStore.setJSON(key, user);
 
   const token = await createSession(key);
 
   return json(
-    { user: { username: user.username, createdAt: user.createdAt } },
+    { user: publicUser(user) },
     { status: 201, headers: { "Set-Cookie": sessionCookieHeader(token) } }
   );
 };

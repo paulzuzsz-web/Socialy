@@ -6,23 +6,63 @@
     login: "/api/auth/login",
     logout: "/api/auth/logout",
     me: "/api/auth/me",
+    claimCoins: "/api/coins/claim",
+    unlockPremium: "/api/premium/unlock",
   };
 
-  let currentUser = null;
+  const CACHE_KEY = "socialy_cached_user";
 
+  let currentUser = null;
+  let isOffline = false;
+
+  function cacheUser(user) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(user));
+    } catch {
+      /* ignore storage errors */
+    }
+  }
+
+  function getCachedUser() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearCachedUser() {
+    try {
+      localStorage.removeItem(CACHE_KEY);
+    } catch {
+      /* ignore storage errors */
+    }
+  }
+
+  // Distinguishes "the server said you're logged out" from "we couldn't
+  // reach the server at all" (e.g. actually offline). In the latter case we
+  // fall back to the last known session so a Premium member can still reach
+  // their downloaded videos without a network round-trip.
   async function fetchMe() {
     try {
       const res = await fetch(API.me);
-      if (!res.ok) {
+      if (res.status === 401) {
         currentUser = null;
+        isOffline = false;
+        clearCachedUser();
         return null;
       }
+      if (!res.ok) throw new Error("unexpected response");
       const data = await res.json();
       currentUser = data.user;
+      isOffline = false;
+      cacheUser(currentUser);
       return currentUser;
     } catch {
-      currentUser = null;
-      return null;
+      currentUser = getCachedUser();
+      isOffline = !!currentUser;
+      return currentUser;
     }
   }
 
@@ -35,6 +75,8 @@
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Registrierung fehlgeschlagen");
     currentUser = data.user;
+    isOffline = false;
+    cacheUser(currentUser);
     return currentUser;
   }
 
@@ -47,6 +89,8 @@
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Anmeldung fehlgeschlagen");
     currentUser = data.user;
+    isOffline = false;
+    cacheUser(currentUser);
     return currentUser;
   }
 
@@ -57,11 +101,44 @@
       /* ignore network errors on logout */
     }
     currentUser = null;
+    isOffline = false;
+    clearCachedUser();
+  }
+
+  async function claimDailyCoins() {
+    const res = await fetch(API.claimCoins, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Coins konnten nicht abgeholt werden");
+    currentUser = data.user;
+    cacheUser(currentUser);
+    return data;
+  }
+
+  async function unlockPremium() {
+    const res = await fetch(API.unlockPremium, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Premium konnte nicht freigeschaltet werden");
+    currentUser = data.user;
+    cacheUser(currentUser);
+    return currentUser;
   }
 
   function getUser() {
     return currentUser;
   }
 
-  window.SocialyAuth = { fetchMe, register, login, logout, getUser };
+  function isOfflineSession() {
+    return isOffline;
+  }
+
+  window.SocialyAuth = {
+    fetchMe,
+    register,
+    login,
+    logout,
+    claimDailyCoins,
+    unlockPremium,
+    getUser,
+    isOfflineSession,
+  };
 })();
